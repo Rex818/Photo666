@@ -1,0 +1,38 @@
+{
+    "enabled": true,
+    "api_settings": {
+        "priority": ["nominatim", "google", "baidu", "amap"],
+        "google_api_key": "",
+        "baidu_api_key": "",
+        "amap_api_key": "",
+        "timeout": 10,
+        "retry_count": 3,
+        "user_agent": "PicMan GPS Location Plugin/1.0.0"
+    },
+    "cache_settings": {
+        "enabled": true,
+        "max_age_days": 30,
+        "max_cache_size": 10000,
+        "coordinate_precision": 0.001,
+        "cleanup_interval_hours": 24
+    },
+    "ui_settings": {
+        "auto_query_on_photo_select": false,
+        "show_in_photo_info": true,
+        "show_map_link": true,
+        "location_display_format": "short",
+        "show_coordinates": true
+    },
+    "logging": {
+        "level": "INFO",
+        "log_api_calls": true,
+        "log_cache_hits": false,
+        "log_performance": false
+    },
+    "advanced": {
+        "batch_processing_delay": 1.0,
+        "max_concurrent_requests": 3,
+        "coordinate_clustering_enabled": true,
+        "fallback_to_cache_only": false
+    }
+}

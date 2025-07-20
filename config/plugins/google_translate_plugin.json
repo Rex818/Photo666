@@ -1,0 +1,11 @@
+{
+    "name": "Google翻译插件",
+    "version": "1.0.0",
+    "description": "使用免费的googletrans库进行标签翻译",
+    "author": "PicMan Team",
+    "enabled": true,
+    "config": {
+        "source_language": "en",
+        "target_language": "zh-CN"
+    }
+}

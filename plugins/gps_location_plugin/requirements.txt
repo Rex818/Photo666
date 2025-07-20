@@ -1,0 +1,31 @@
+# GPS位置查询插件依赖
+
+# HTTP请求库
+requests>=2.28.0
+
+# 地理计算库（可选，用于坐标计算和验证）
+geopy>=2.3.0
+
+# JSON处理（Python内置，但列出以明确依赖）
+# json - 内置模块
+
+# 数据库操作（Python内置）
+# sqlite3 - 内置模块
+
+# 日期时间处理（Python内置）
+# datetime - 内置模块
+
+# 数学计算（Python内置）
+# math - 内置模块
+
+# 类型注解（Python 3.8+内置）
+# typing - 内置模块
+
+# 数据类（Python 3.7+内置）
+# dataclasses - 内置模块
+
+# 注意：
+# 1. 本插件主要依赖Python标准库，外部依赖最小化
+# 2. requests是必需的，用于API调用
+# 3. geopy是可选的，主要用于高级地理计算功能
+# 4. 如果geopy不可用，插件会使用内置的简化计算方法
