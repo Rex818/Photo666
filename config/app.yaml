@@ -1,0 +1,50 @@
+database:
+  auto_vacuum: true
+  backup_enabled: true
+  backup_interval_hours: 24
+  path: data/picman.db
+  pool_size: 10
+import_settings:
+  auto_detect_duplicates: true
+  extract_exif: true
+  generate_thumbnails: true
+  preserve_directory_structure: true
+  supported_formats:
+  - .jpg
+  - .jpeg
+  - .png
+  - .bmp
+  - .gif
+  - .tiff
+  - .webp
+logging:
+  backup_count: 5
+  file_path: logs/picman.log
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  level: INFO
+  max_file_size: 10485760
+plugins:
+  auto_load: true
+  enabled_plugins:
+  - Google翻译插件
+  plugin_directory: plugins
+  sandbox_enabled: true
+thumbnail:
+  cache_size: 1000
+  format: JPEG
+  generate_on_import: true
+  quality: 85
+  size:
+  - 256
+  - 256
+ui:
+  auto_save_layout: true
+  show_image_info: true
+  theme: default
+  thumbnail_grid_columns: 6
+  window_position:
+  - 8
+  - -8
+  window_size:
+  - 2234
+  - 1187
