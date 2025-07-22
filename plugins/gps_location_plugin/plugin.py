@@ -93,17 +93,14 @@ class GPSLocationPlugin(MetadataPlugin):
         )
     
     def initialize(self, app_context: Dict[str, Any]) -> bool:
-        """初始化插件
-        
+        """
+        初始化插件
         Args:
             app_context: 应用程序上下文
-            
-        Returns:
-            是否初始化成功
         """
         try:
+            self.app_context = app_context or {}
             self.logger.info("Initializing GPS Location Plugin")
-            self.app_context = app_context
             
             # 初始化配置管理器
             self._init_config()
@@ -175,9 +172,8 @@ class GPSLocationPlugin(MetadataPlugin):
             # 初始化GPS提取器
             self.gps_extractor = GPSExtractor()
             
-            # 初始化API客户端
-            api_config = self.config.get_api_config()
-            self.api_client = LocationAPIClient(api_config)
+            # 初始化API客户端，强制timeout=5秒
+            self.api_client = LocationAPIClient({"timeout": 5})
             
             # 初始化缓存管理器
             cache_config = self.config.get_cache_config()

@@ -46,48 +46,19 @@ class PhotoManager:
             file_hash = self._calculate_file_hash(file_path)
             existing_photo = self._find_by_hash(file_hash)
             
-            if existing_photo:
-                # 检查文件路径是否发生变化
-                current_filepath = str(file_path.absolute())
-                stored_filepath = existing_photo["filepath"]
-                
-                if current_filepath != stored_filepath:
-                    # 文件路径发生变化，更新数据库中的路径
-                    self.logger.info("Photo file moved, updating path", 
-                                   old_path=stored_filepath,
-                                   new_path=current_filepath,
-                                   photo_id=existing_photo["id"])
-                    
-                    # 更新文件路径和文件大小
-                    update_data = {
-                        "filepath": current_filepath,
-                        "file_size": file_path.stat().st_size,
-                        "date_modified": datetime.now().isoformat()
-                    }
-                    
-                    # 如果缩略图不存在，重新生成
-                    if not existing_photo.get("thumbnail_path") or not Path(existing_photo["thumbnail_path"]).exists():
-                        if self.config.get("thumbnail.generate_on_import", True):
-                            thumbnail_path = self.thumbnail_gen.generate_thumbnail(file_path)
-                            if thumbnail_path:
-                                update_data["thumbnail_path"] = thumbnail_path
-                                self.logger.info("Regenerated thumbnail for moved file", 
-                                               photo_id=existing_photo["id"])
-                    
-                    # 更新数据库
-                    if self.db.update_photo(existing_photo["id"], update_data):
-                        self.logger.info("Successfully updated photo path", 
-                                       photo_id=existing_photo["id"])
-                    else:
-                        self.logger.error("Failed to update photo path", 
-                                        photo_id=existing_photo["id"])
-                else:
-                    self.logger.info("Photo already exists at same location", path=str(file_path))
-                
-                return existing_photo["id"]
-            
-            # Extract image metadata
+            # 强制重新提取GPS信息并更新数据库
             metadata = self._extract_metadata(file_path)
+            self.logger.info("导入时EXIF GPS调试", lat=metadata.get("gps_latitude"), lon=metadata.get("gps_longitude"), alt=metadata.get("gps_altitude"), raw=metadata.get("gps_raw"), file=str(file_path))
+            if existing_photo:
+                update_data = {
+                    "gps_latitude": metadata.get("gps_latitude"),
+                    "gps_longitude": metadata.get("gps_longitude"),
+                    "gps_altitude": metadata.get("gps_altitude"),
+                    "exif_data": metadata.get("exif_data", {})
+                }
+                self.db.update_photo(existing_photo["id"], update_data)
+                self.logger.info("已存在照片强制更新GPS", photo_id=existing_photo["id"], update_data=update_data)
+                return existing_photo["id"]
             
             # Generate thumbnail
             thumbnail_path = None
@@ -109,8 +80,12 @@ class PhotoManager:
                 "rating": 0,
                 "is_favorite": False,
                 "tags": [],
-                "notes": ""
+                "notes": "",
+                "gps_latitude": metadata.get("gps_latitude"),
+                "gps_longitude": metadata.get("gps_longitude"),
+                "gps_altitude": metadata.get("gps_altitude")
             }
+            self.logger.info("新照片写入GPS", photo_data=photo_data)
             
             # Add to database
             photo_id = self.db.add_photo(photo_data)
@@ -378,24 +353,23 @@ class PhotoManager:
             "height": 0,
             "format": "",
             "date_taken": "",
-            "exif_data": {}
+            "exif_data": {},
+            "gps_latitude": None,
+            "gps_longitude": None,
+            "gps_altitude": None,
+            "gps_raw": None  # 新增，便于调试
         }
-        
         try:
             with Image.open(file_path) as img:
                 metadata["width"] = img.width
                 metadata["height"] = img.height
                 metadata["format"] = img.format or ""
-                
                 # Extract EXIF data
                 if hasattr(img, '_getexif') and img._getexif():
                     exif_dict = {}
                     exif = img._getexif()
-                    
                     for tag_id, value in exif.items():
                         tag = TAGS.get(tag_id, tag_id)
-                        
-                        # Convert non-serializable types for JSON serialization
                         if isinstance(value, bytes):
                             try:
                                 value = value.decode('utf-8')
@@ -405,26 +379,76 @@ class PhotoManager:
                             value = value.isoformat()
                         elif not isinstance(value, (str, int, float, bool, list, dict, type(None))):
                             value = str(value)
-                        
                         exif_dict[tag] = value
-                    
                     metadata["exif_data"] = exif_dict
-                    
                     # Extract date taken
                     date_taken = exif_dict.get("DateTime") or exif_dict.get("DateTimeOriginal")
                     if date_taken:
                         try:
-                            # Convert to ISO format
                             dt = datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S")
                             metadata["date_taken"] = dt.isoformat()
                         except ValueError:
                             pass
-                
+                    # 提取GPS信息（增强兼容性）
+                    gps_info = exif_dict.get("GPSInfo")
+                    metadata["gps_raw"] = str(gps_info)  # 记录原始内容
+                    if gps_info:
+                        def _convert_gps(coord, ref):
+                            try:
+                                # 支持多种格式
+                                if isinstance(coord, (list, tuple)) and len(coord) == 3:
+                                    def _val(x):
+                                        if isinstance(x, tuple) and len(x) == 2:
+                                            return x[0] / x[1] if x[1] else 0
+                                        try:
+                                            return float(x)
+                                        except Exception:
+                                            return 0
+                                    d = _val(coord[0])
+                                    m = _val(coord[1])
+                                    s = _val(coord[2])
+                                elif isinstance(coord, str):
+                                    # 兼容字符串格式 "44; 7; 32.82..."
+                                    parts = [float(x.strip()) for x in coord.replace(';', ',').split(',') if x.strip()]
+                                    d, m, s = (parts + [0, 0, 0])[:3]
+                                else:
+                                    return None
+                                value = d + m / 60 + s / 3600
+                                if ref in ['S', 'W']:
+                                    value = -value
+                                return value
+                            except Exception as e:
+                                self.logger.warning("GPS坐标转换失败", error=str(e), coord=str(coord), ref=ref)
+                                return None
+                        try:
+                            gps_lat = gps_info.get(2) or gps_info.get('GPSLatitude')
+                            gps_lat_ref = gps_info.get(1) or gps_info.get('GPSLatitudeRef')
+                            gps_lon = gps_info.get(4) or gps_info.get('GPSLongitude')
+                            gps_lon_ref = gps_info.get(3) or gps_info.get('GPSLongitudeRef')
+                            gps_alt = gps_info.get(6) or gps_info.get('GPSAltitude')
+                            self.logger.info("原始GPS字段", lat=gps_lat, lat_ref=gps_lat_ref, lon=gps_lon, lon_ref=gps_lon_ref, alt=gps_alt, file=str(file_path))
+                            if gps_lat and gps_lat_ref and gps_lon and gps_lon_ref:
+                                lat = _convert_gps(gps_lat, gps_lat_ref)
+                                lon = _convert_gps(gps_lon, gps_lon_ref)
+                                metadata["gps_latitude"] = lat
+                                metadata["gps_longitude"] = lon
+                                self.logger.info("EXIF GPS提取", lat=lat, lon=lon, file=str(file_path))
+                            else:
+                                self.logger.info("未找到完整GPS字段", gps_info=str(gps_info), file=str(file_path))
+                            if gps_alt:
+                                try:
+                                    if isinstance(gps_alt, tuple):
+                                        alt = gps_alt[0] / gps_alt[1] if gps_alt[1] else 0
+                                    else:
+                                        alt = float(gps_alt)
+                                    metadata["gps_altitude"] = alt
+                                    self.logger.info("EXIF 高度提取", alt=alt, file=str(file_path))
+                                except Exception as e:
+                                    self.logger.warning("GPS高度转换失败", error=str(e), gps_alt=str(gps_alt))
+                        except Exception as e:
+                            self.logger.warning("GPS信息解析失败", error=str(e), gps_info=str(gps_info))
         except Exception as e:
-            self.logger.warning("Failed to extract metadata", 
-                              path=str(file_path), 
-                              error=str(e))
-        
+            self.logger.warning("Failed to extract metadata", path=str(file_path), error=str(e))
         return metadata
     
     def find_original_image_by_hash(self, file_hash: str) -> Optional[str]:

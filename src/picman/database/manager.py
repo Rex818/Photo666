@@ -74,13 +74,17 @@ class DatabaseManager:
                     "exif_data": str,  # JSON string
                     "tags": str,       # JSON array
                     "simple_tags": str,    # JSON array - 简单标签
-                    "normal_tags": str,    # JSON array - 普通标签
-                    "detailed_tags": str,  # JSON array - 详细标签
-                    "tag_translations": str,  # JSON object - 标签翻译
+                    "normal_tags": str,    # 普通标签
+                    "detailed_tags": str,  # 详细标签
+                    "tag_translations": str,  # 标签翻译
                     "rating": int,
                     "is_favorite": bool,
                     "thumbnail_path": str,
-                    "notes": str
+                    "notes": str,
+                    "gps_latitude": float,
+                    "gps_longitude": float,
+                    "gps_altitude": float,
+                    "location_text": str
                 }, pk="id")
                 
                 # Create indexes
@@ -157,7 +161,11 @@ class DatabaseManager:
                     ("simple_tags", "TEXT DEFAULT '[]'"),
                     ("normal_tags", "TEXT DEFAULT '[]'"),
                     ("detailed_tags", "TEXT DEFAULT '[]'"),
-                    ("tag_translations", "TEXT DEFAULT '{}'")
+                    ("tag_translations", "TEXT DEFAULT '{}'"),
+                    ("gps_latitude", "REAL DEFAULT NULL"),
+                    ("gps_longitude", "REAL DEFAULT NULL"),
+                    ("gps_altitude", "REAL DEFAULT NULL"),
+                    ("location_text", "TEXT DEFAULT NULL")
                 ]
                 
                 for column_name, column_def in new_columns:
@@ -207,7 +215,11 @@ class DatabaseManager:
                 "rating": photo_data.get("rating", 0),
                 "is_favorite": photo_data.get("is_favorite", False),
                 "thumbnail_path": photo_data.get("thumbnail_path", ""),
-                "notes": photo_data.get("notes", "")
+                "notes": photo_data.get("notes", ""),
+                "gps_latitude": photo_data.get("gps_latitude"),
+                "gps_longitude": photo_data.get("gps_longitude"),
+                "gps_altitude": photo_data.get("gps_altitude"),
+                "location_text": photo_data.get("location_text")
             }
             
             result = db["photos"].insert(photo_record)
@@ -466,6 +478,16 @@ class DatabaseManager:
             
             if "tag_translations" in update_data and isinstance(update_data["tag_translations"], dict):
                 update_data["tag_translations"] = safe_json_dumps(update_data["tag_translations"])
+            
+            # gps_latitude/gps_longitude直接写入
+            if "gps_latitude" in update_data:
+                pass
+            if "gps_longitude" in update_data:
+                pass
+            if "gps_altitude" in update_data:
+                pass
+            if "location_text" in update_data:
+                pass
             
             db["photos"].update(photo_id, update_data)
             

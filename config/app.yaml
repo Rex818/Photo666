@@ -27,6 +27,7 @@ plugins:
   auto_load: true
   enabled_plugins:
   - Google翻译插件
+  - GPS位置查询插件
   plugin_directory: plugins
   sandbox_enabled: true
 thumbnail:
@@ -43,8 +44,8 @@ ui:
   theme: default
   thumbnail_grid_columns: 6
   window_position:
-  - 8
-  - -8
+  - -181
+  - 89
   window_size:
   - 2234
   - 1187

@@ -544,3 +544,10 @@ class LocationCache:
         except Exception as e:
             self.logger.error("Cache import failed", error=str(e))
             return False
+
+    def get(self, coordinate):
+        """兼容插件主类调用，等价于get_cached_location"""
+        return self.get_cached_location(coordinate)
+    def set(self, coordinate, location):
+        """兼容插件主类调用，等价于cache_location"""
+        return self.cache_location(coordinate, location)

@@ -361,11 +361,9 @@ class MainWindow(QMainWindow):
         """Create the right panel with photo viewer and controls."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        
         # Photo viewer (4区 - 照片预览与详细信息区)
-        self.photo_viewer = PhotoViewer()
+        self.photo_viewer = PhotoViewer(plugin_manager=self.plugin_manager)
         layout.addWidget(self.photo_viewer)
-        
         return panel
     
     def create_dock_widgets(self):
@@ -478,6 +476,11 @@ class MainWindow(QMainWindow):
         plugin_manager_action.triggered.connect(self.show_plugin_manager)
         tools_menu.addAction(plugin_manager_action)
         
+        # 新增：文件名修改工具
+        rename_tool_action = QAction(self.get_text("Rename Files", "修改文件名"), self)
+        rename_tool_action.triggered.connect(self.show_rename_tool_dialog)
+        tools_menu.addAction(rename_tool_action)
+        
         # Google翻译插件配置
         google_translate_config_action = QAction(self.get_text("Google Translate Plugin Config", "Google翻译插件配置"), self)
         google_translate_config_action.triggered.connect(self.show_google_translate_config)
@@ -567,6 +570,12 @@ class MainWindow(QMainWindow):
         self.filter_combo.addItems(filter_items)
         self.filter_combo.currentIndexChanged.connect(self.apply_quick_filter)
         toolbar.addWidget(self.filter_combo)
+        
+        # 添加全新刷新地理位置按钮
+        self.refresh_all_location_btn = QPushButton("全新刷新地理位置")
+        self.refresh_all_location_btn.setToolTip("对所有照片重新查询地理位置信息")
+        self.refresh_all_location_btn.clicked.connect(self.refresh_all_locations)
+        toolbar.addWidget(self.refresh_all_location_btn)
     
     def create_status_bar(self):
         """Create the status bar."""
@@ -1579,6 +1588,19 @@ class MainWindow(QMainWindow):
         
         self.logger.info("Application closing")
         event.accept()
+
+    def refresh_all_locations(self):
+        """批量刷新所有照片的地理位置信息。"""
+        # TODO: 遍历所有照片，调用插件/服务批量刷新地理位置
+        # 这里只做占位，实际应异步处理并有进度提示
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "刷新地理位置", "已触发全新刷新地理位置信息（实际功能待实现）")
+
+    def show_rename_tool_dialog(self):
+        """弹出文件名修改工具对话框"""
+        from .rename_tool_dialog import RenameToolDialog
+        dialog = RenameToolDialog(self, photo_manager=self.photo_manager)
+        dialog.exec()
 
 
 def main():
