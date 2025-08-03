@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont
-import structlog
+import logging
 import os
 import shutil
 
@@ -46,10 +46,10 @@ class PluginManagerDialog(QDialog):
     def __init__(self, plugin_manager: PluginManager, parent=None):
         super().__init__(parent)
         self.plugin_manager = plugin_manager
-        self.logger = structlog.get_logger("picman.gui.plugin_manager")
+        self.logger = logging.getLogger("picman.gui.plugin_manager")
         
         self.init_ui()
-        self.load_plugins()
+        self.refresh_plugin_list()
     
     def init_ui(self):
         """Initialize the dialog UI."""
@@ -237,6 +237,25 @@ class PluginManagerDialog(QDialog):
         # Update UI state
         self.update_button_states()
     
+    def refresh_plugin_list(self):
+        """Refresh the plugin list without reloading plugins."""
+        self.plugin_list.clear()
+        
+        # Get discovered plugins
+        discovered_plugins = self.plugin_manager.discover_plugins()
+        
+        # Get enabled plugins
+        enabled_plugins = self.plugin_manager.config.get("plugins.enabled_plugins", [])
+        
+        # Add plugins to list
+        for plugin_info in discovered_plugins:
+            enabled = plugin_info["name"] in enabled_plugins
+            item = PluginListItem(plugin_info, enabled)
+            self.plugin_list.addItem(item)
+        
+        # Update UI state
+        self.update_button_states()
+    
     def on_plugin_selected(self, item):
         """Handle plugin selection."""
         if isinstance(item, PluginListItem):
@@ -290,8 +309,9 @@ class PluginManagerDialog(QDialog):
             # Load the plugin
             self.plugin_manager.load_plugin(plugin_name)
             
-            self.logger.info("Plugin enabled", name=plugin_name)
+            self.logger.info(f"Plugin enabled - name: {plugin_name}")
             self.plugins_changed.emit()
+            self.refresh_plugin_list()
     
     def disable_plugin_by_name(self, plugin_name: str):
         """Disable a plugin by name."""
@@ -306,8 +326,9 @@ class PluginManagerDialog(QDialog):
             # Unload the plugin
             self.plugin_manager.unload_plugin(plugin_name)
             
-            self.logger.info("Plugin disabled", name=plugin_name)
+            self.logger.info(f"Plugin disabled - name: {plugin_name}")
             self.plugins_changed.emit()
+            self.refresh_plugin_list()
     
     def remove_plugin(self):
         """Remove the selected plugin."""

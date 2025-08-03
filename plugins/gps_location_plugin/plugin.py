@@ -8,7 +8,7 @@ import sys
 import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import structlog
+import logging
 
 # 添加PicMan源码目录到Python路径
 src_dir = Path(__file__).parent.parent.parent / "src"
@@ -16,17 +16,20 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 try:
-    from picman.plugins.base import MetadataPlugin, PluginInfo
+    from picman.plugins.base import Plugin, PluginInfo
 except ImportError:
     # 如果无法导入，创建简单的基类
-    class MetadataPlugin:
+    class Plugin:
         def __init__(self):
-            self.logger = structlog.get_logger(f"picman.plugins.{self.__class__.__name__}")
+            self.logger = logging.getLogger(f"picman.plugins.{self.__class__.__name__}")
         
-        def extract_metadata(self, image_path: str) -> Dict[str, Any]:
-            return {}
+        def get_info(self):
+            pass
         
-        def write_metadata(self, image_path: str, metadata: Dict[str, Any]) -> bool:
+        def initialize(self, app_context):
+            return True
+        
+        def shutdown(self):
             return True
     
     class PluginInfo:
@@ -58,7 +61,7 @@ except ImportError:
     )
 
 
-class GPSLocationPlugin(MetadataPlugin):
+class GPSLocationPlugin(Plugin):
     """GPS位置查询插件主类
     
     提供GPS坐标提取和位置查询功能的主要接口。
@@ -66,7 +69,7 @@ class GPSLocationPlugin(MetadataPlugin):
     
     def __init__(self):
         super().__init__()
-        self.logger = structlog.get_logger("gps_location_plugin.main")
+        self.logger = logging.getLogger("gps_location_plugin.main")
         
         # 插件状态
         self._initialized = False
@@ -93,14 +96,17 @@ class GPSLocationPlugin(MetadataPlugin):
         )
     
     def initialize(self, app_context: Dict[str, Any]) -> bool:
-        """
-        初始化插件
+        """初始化插件
+        
         Args:
             app_context: 应用程序上下文
+            
+        Returns:
+            是否初始化成功
         """
         try:
-            self.app_context = app_context or {}
             self.logger.info("Initializing GPS Location Plugin")
+            self.app_context = app_context
             
             # 初始化配置管理器
             self._init_config()
@@ -123,7 +129,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return True
             
         except Exception as e:
-            self.logger.error("Plugin initialization failed", error=str(e))
+            self.logger.error(f"Plugin initialization failed - error: {str(e)}")
             self._initialized = False
             self._available = False
             return False
@@ -149,7 +155,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return True
             
         except Exception as e:
-            self.logger.error("Plugin shutdown failed", error=str(e))
+            self.logger.error(f"Plugin shutdown failed - error: {str(e)}")
             return False
     
     def _init_config(self):
@@ -172,8 +178,9 @@ class GPSLocationPlugin(MetadataPlugin):
             # 初始化GPS提取器
             self.gps_extractor = GPSExtractor()
             
-            # 初始化API客户端，强制timeout=5秒
-            self.api_client = LocationAPIClient({"timeout": 5})
+            # 初始化API客户端
+            api_config = self.config.get_api_config()
+            self.api_client = LocationAPIClient(api_config)
             
             # 初始化缓存管理器
             cache_config = self.config.get_cache_config()
@@ -242,8 +249,7 @@ class GPSLocationPlugin(MetadataPlugin):
             }
             
         except Exception as e:
-            self.logger.error("Metadata extraction failed", 
-                            file=image_path, error=str(e))
+            self.logger.error(f"Metadata extraction failed - file: {image_path}, error: {str(e)}")
             return {}
     
     def write_metadata(self, image_path: str, metadata: Dict[str, Any]) -> bool:
@@ -295,10 +301,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return location_info
             
         except Exception as e:
-            self.logger.error("Location query failed", 
-                            lat=coordinate.latitude, 
-                            lon=coordinate.longitude, 
-                            error=str(e))
+            self.logger.error(f"Location query failed - lat: {coordinate.latitude}, lon: {coordinate.longitude}, error: {str(e)}")
             return None
     
     def query_location_from_photo_data(self, photo_data: Dict[str, Any]) -> Optional[LocationInfo]:
@@ -323,8 +326,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return self.query_location(coordinate)
             
         except Exception as e:
-            self.logger.error("Location query from photo data failed", 
-                            photo_id=photo_data.get('id'), error=str(e))
+            self.logger.error(f"Location query from photo data failed - photo_id: {photo_data.get('id')}, error: {str(e)}")
             return None
     
     def batch_query_locations(self, photo_data_list: List[Dict[str, Any]], 
@@ -369,7 +371,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return results
             
         except Exception as e:
-            self.logger.error("Batch location query failed", error=str(e))
+            self.logger.error(f"Batch location query failed - error: {str(e)}")
             return results
     
     def get_menu_actions(self) -> List[Dict[str, Any]]:
@@ -442,7 +444,7 @@ class GPSLocationPlugin(MetadataPlugin):
             return True
             
         except Exception as e:
-            self.logger.error("Failed to update settings", error=str(e))
+            self.logger.error(f"Failed to update settings - error: {str(e)}")
             return False
     
     def is_available(self) -> bool:
@@ -510,7 +512,7 @@ class GPSLocationPlugin(MetadataPlugin):
         try:
             return self.cache.clear_expired_cache(max_age_days)
         except Exception as e:
-            self.logger.error("Cache cleanup failed", error=str(e))
+            self.logger.error(f"Cache cleanup failed - error: {str(e)}")
             return 0
     
     def get_supported_formats(self) -> List[str]:

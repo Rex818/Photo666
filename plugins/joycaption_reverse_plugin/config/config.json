@@ -1,0 +1,85 @@
+{
+  "enabled": true,
+  "models": {
+    "default_model": "fancyfeast/llama-joycaption-beta-one-hf-llava",
+    "available_models": [
+      "fancyfeast/llama-joycaption-beta-one-hf-llava",
+      "fancyfeast/llama-joycaption-alpha-two-hf-llava"
+    ],
+    "local_search_paths": [
+      "./models",
+      "../models"
+    ],
+    "custom_local_paths": [
+      "E:/Cursor-test/llama-joycaption-beta-one-hf-llava"
+    ]
+  },
+  "inference": {
+    "precision": "Balanced (8-bit)",
+    "max_new_tokens": 512,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "top_k": 0,
+    "default_level": "detailed",
+    "default_caption_type": "Descriptive",
+    "extra_options": [
+      "exclude_unchangeable_attributes",
+      "include_lighting",
+      "include_camera_angle",
+      "include_watermark",
+      "include_jpeg_artifacts",
+      "include_camera_details",
+      "keep_pg_rated",
+      "include_aesthetic_quality",
+      "include_composition_style",
+      "specify_depth_field",
+      "specify_lighting_sources",
+      "include_nsfw",
+      "only_describe_most_important_elements",
+      "do_not_include_artist_name_or_title",
+      "identify_image_orientation",
+      "do_not_use_polite_euphemisms",
+      "include_character_age",
+      "include_camera_shot_type",
+      "include_camera_vantage_height",
+      "avoid_meta_descriptive_phrases"
+    ],
+    "save_to_file": true,
+    "save_to_database": true,
+    "auto_display": true
+  },
+  "output": {
+    "save_to_file": true,
+    "save_to_database": true,
+    "auto_display": true,
+    "file_encoding": "utf-8"
+  },
+  "performance": {
+    "batch_size": 4,
+    "use_gpu": true,
+    "cache_models": true,
+    "max_memory_usage": 0.8
+  },
+  "ui": {
+    "show_progress": true,
+    "auto_refresh": true,
+    "confirm_batch_operation": true
+  },
+  "description_levels": {
+    "simple": {
+      "name": "简单描述",
+      "description": "以词、词组组成的对图片内容的简单描述",
+      "max_tokens": 128
+    },
+    "normal": {
+      "name": "普通描述",
+      "description": "用简单的自然语句，一般是几句话描述的图片内容",
+      "max_tokens": 256
+    },
+    "detailed": {
+      "name": "详细描述",
+      "description": "用很多句话组成的对图案细节详细描述的内容",
+      "max_tokens": 512
+    }
+  }
+}

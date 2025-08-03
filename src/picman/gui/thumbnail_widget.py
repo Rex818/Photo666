@@ -39,12 +39,6 @@ class ThumbnailItem(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Selection checkbox
-        self.checkbox = QCheckBox()
-        self.checkbox.setVisible(False)  # Initially hidden
-        self.checkbox.stateChanged.connect(self.on_checkbox_changed)
-        layout.addWidget(self.checkbox, alignment=Qt.AlignmentFlag.AlignRight)
-        
         # Thumbnail image
         self.image_label = QLabel()
         self.image_label.setFixedSize(180, 135)
@@ -96,24 +90,47 @@ class ThumbnailItem(QFrame):
         
         layout.addLayout(info_layout)
     
-    def on_checkbox_changed(self, state):
-        """Handle checkbox state change."""
-        self.is_selected = state == Qt.CheckState.Checked
-        self.set_selected(self.is_selected)
-        # Emit signal to parent widget
-        if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'on_thumbnail_selection_changed'):
-            self.parent().parent().on_thumbnail_selection_changed(self.photo_id, self.is_selected)
+
 
     def set_selected(self, selected: bool):
         """Set the selection state of the thumbnail."""
         self.is_selected = selected
         
         if selected:
-            # Highlight the thumbnail
+            # Highlight the thumbnail and show checkmark
             self.setStyleSheet("QFrame { border: 3px solid #3498db; background-color: #e8f4fc; }")
+            # Show checkmark in bottom-right corner
+            self.show_checkmark()
         else:
-            # Reset to normal style
+            # Reset to normal style and hide checkmark
             self.setStyleSheet("")
+            self.hide_checkmark()
+    
+    def show_checkmark(self):
+        """Show checkmark in bottom-right corner."""
+        if not hasattr(self, 'checkmark_label'):
+            self.checkmark_label = QLabel("✓", self)
+            self.checkmark_label.setStyleSheet("""
+                QLabel {
+                    background-color: #27ae60;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 2px 4px;
+                    font-weight: bold;
+                    font-size: 12px;
+                }
+            """)
+            self.checkmark_label.setFixedSize(20, 20)
+            self.checkmark_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Position in bottom-right corner
+        self.checkmark_label.move(self.width() - 25, self.height() - 25)
+        self.checkmark_label.show()
+    
+    def hide_checkmark(self):
+        """Hide checkmark."""
+        if hasattr(self, 'checkmark_label'):
+            self.checkmark_label.hide()
     
     def load_thumbnail(self):
         """Load and display the thumbnail image."""
@@ -174,7 +191,21 @@ class ThumbnailItem(QFrame):
     def mousePressEvent(self, event):
         """Handle mouse press events."""
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.photo_id)
+            # Get the thumbnail widget
+            thumbnail_widget = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_select_mode'):
+                    thumbnail_widget = parent
+                    break
+                parent = parent.parent()
+            
+            if thumbnail_widget and thumbnail_widget.multi_select_mode:
+                # Toggle selection in multi-select mode
+                thumbnail_widget.toggle_item_selection(self.photo_id)
+            else:
+                # Normal single selection
+                self.clicked.emit(self.photo_id)
         super().mousePressEvent(event)
     
     def contextMenuEvent(self, event: QContextMenuEvent):
@@ -198,6 +229,7 @@ class ThumbnailWidget(QScrollArea):
         self.logger = structlog.get_logger("picman.gui.thumbnail_widget")
         self.drag_start_position = None
         self.multi_select_mode = False
+        self._displaying_photos = False
         
         self.init_ui()
     
@@ -232,6 +264,11 @@ class ThumbnailWidget(QScrollArea):
     def display_photos(self, photos: List[Dict[str, Any]]):
         """Display a list of photos as thumbnails."""
         try:
+            # Prevent recursive calls
+            if hasattr(self, '_displaying_photos') and self._displaying_photos:
+                return
+            self._displaying_photos = True
+            
             # Clear existing thumbnails
             self.clear_thumbnails()
             
@@ -254,13 +291,17 @@ class ThumbnailWidget(QScrollArea):
                 thumbnail_item.clicked.connect(self.on_thumbnail_clicked)
                 thumbnail_item.context_menu_requested.connect(self.show_context_menu)
                 
+
+                
                 self.grid_layout.addWidget(thumbnail_item, row, col)
                 self.thumbnail_items.append(thumbnail_item)
             
-            self.logger.info("Displayed thumbnails", count=len(photos))
+            self.logger.info("Displayed thumbnails", count=len(photos), multi_select_mode=self.multi_select_mode)
             
         except Exception as e:
             self.logger.error("Failed to display photos", error=str(e))
+        finally:
+            self._displaying_photos = False
     
     def clear_thumbnails(self):
         """Clear all thumbnail items."""
@@ -282,8 +323,10 @@ class ThumbnailWidget(QScrollArea):
         if new_columns != self.columns:
             self.columns = new_columns
             # Redisplay photos with new column count
-            if self.photos:
+            if self.photos and hasattr(self, '_displaying_photos') and not self._displaying_photos:
+                self._displaying_photos = True
                 self.display_photos(self.photos)
+                self._displaying_photos = False
     
     def on_thumbnail_clicked(self, photo_id: int):
         """Handle thumbnail click events."""
@@ -313,6 +356,9 @@ class ThumbnailWidget(QScrollArea):
                     item.set_selected(True)
                     self.selected_items.append(photo_id)
                 break
+        
+        # Emit selection changed signal
+        self.selection_changed.emit(self.selected_items.copy())
     
     def select_item(self, photo_id: int):
         """Select a single item."""
@@ -321,12 +367,18 @@ class ThumbnailWidget(QScrollArea):
                 item.set_selected(True)
                 self.selected_items = [photo_id]
                 break
+        
+        # Emit selection changed signal
+        self.selection_changed.emit(self.selected_items.copy())
     
     def clear_selection(self):
         """Clear all selected items."""
         for item in self.thumbnail_items:
             item.set_selected(False)
         self.selected_items = []
+        
+        # Emit selection changed signal
+        self.selection_changed.emit(self.selected_items.copy())
     
     def select_all(self):
         """Select all displayed photos."""
@@ -347,14 +399,11 @@ class ThumbnailWidget(QScrollArea):
     def set_multi_select_mode(self, enabled: bool):
         """Enable or disable multi-select mode."""
         self.multi_select_mode = enabled
-        for item in self.thumbnail_items:
-            if hasattr(item, 'checkbox'):
-                item.checkbox.setVisible(enabled)
-                if not enabled:
-                    item.checkbox.setChecked(False)
-                    item.set_selected(False)
         
         if not enabled:
+            # Clear all selections when switching to single-select mode
+            for item in self.thumbnail_items:
+                item.set_selected(False)
             self.selected_items.clear()
             self.selection_changed.emit([])
     

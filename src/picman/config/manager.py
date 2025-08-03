@@ -3,7 +3,7 @@ Configuration management module for PyPhotoManager.
 Handles application configuration using YAML files.
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Dict, Any, Optional, Tuple, List
 import yaml
 from pathlib import Path
@@ -36,6 +36,7 @@ class UIConfig:
     thumbnail_grid_columns: int = 6
     show_image_info: bool = True
     auto_save_layout: bool = True
+    layout: Optional[Dict[str, Any]] = field(default_factory=dict)
 
 @dataclass
 class ImportConfig:

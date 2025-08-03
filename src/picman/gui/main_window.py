@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QSpinBox, QCheckBox, QTabWidget, QDockWidget, QFrame,
     QDialog, QGroupBox, QDateEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QDate
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QDate, QByteArray
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
 import structlog
 from datetime import datetime
@@ -69,11 +69,17 @@ class ImportWorkerWithTags(QThread):
         self.directory = directory
         self.recursive = recursive
         self.album_id = album_id
-        self.import_settings = import_settings
+        self.import_settings = import_settings or {}
     
     def run(self):
         try:
-            result = self.photo_manager.import_directory(self.directory, self.recursive, self.album_id, self.import_settings)
+            # 使用带标签设置的导入方法
+            result = self.photo_manager.import_directory(
+                self.directory, 
+                self.recursive, 
+                self.album_id, 
+                self.import_settings
+            )
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -156,7 +162,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """Initialize the user interface."""
-        self.setWindowTitle("PyPhotoManager - 专业照片管理软件")
+        self.setWindowTitle("Photo666 - AI图片管理软件")
         self.setMinimumSize(1200, 800)
         
         # Create central widget
@@ -170,16 +176,18 @@ class MainWindow(QMainWindow):
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.main_splitter)
         
-        # Left panel - search and thumbnails
-        left_panel = self.create_left_panel()
-        self.main_splitter.addWidget(left_panel)
-        
-        # Right panel - photo viewer with controls
-        right_panel = self.create_right_panel()
-        self.main_splitter.addWidget(right_panel)
+        # Create central area for photo display (empty initially)
+        central_placeholder = QWidget()
+        central_placeholder.setStyleSheet("background-color: #f0f0f0; border: 2px dashed #ccc;")
+        central_label = QLabel("请选择相册或进行搜索以查看照片")
+        central_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        central_label.setStyleSheet("font-size: 16px; color: #666;")
+        central_layout = QVBoxLayout(central_placeholder)
+        central_layout.addWidget(central_label)
+        self.main_splitter.addWidget(central_placeholder)
         
         # Set splitter proportions
-        self.main_splitter.setSizes([400, 800])
+        self.main_splitter.setSizes([800])
         
         # Create dock widgets
         self.create_dock_widgets()
@@ -198,45 +206,32 @@ class MainWindow(QMainWindow):
         
         # 加载保存的搜索条件
         self.load_saved_search_condition()
+        
+        # 尝试恢复保存的布局（在所有UI组件初始化完成后）
+        self.restore_layout()
     
-    def create_left_panel(self) -> QWidget:
-        """Create the left panel with search panel and search results."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        
-        # Search panel (3区 - 图片搜索区)
-        search_panel = self.create_search_panel()
-        layout.addWidget(search_panel)
-        
-        # Search results thumbnails (3区下方 - 检索结果缩略图)
-        self.search_results_widget = ThumbnailWidget()
-        self.search_results_widget.photo_selected.connect(self.on_search_photo_selected)
-        layout.addWidget(self.search_results_widget)
-        
-        return panel
+
     
-    def create_search_panel(self) -> QWidget:
-        """Create the search panel with advanced search controls."""
+    def create_search_controls(self) -> QWidget:
+        """Create the search controls panel (compact version for dock widget)."""
         panel = QFrame()
         panel.setFrameStyle(QFrame.Shape.StyledPanel)
-        panel.setMaximumHeight(350)  # 增加高度以容纳更多控件
+        panel.setMaximumHeight(280)  # 固定高度，为搜索结果留出空间
         
         layout = QVBoxLayout(panel)
-        
-        # Panel title
-        title_label = QLabel(self.get_text("Photo Search", "照片搜索"))
-        title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(title_label)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
         
         # 基础搜索区域
         basic_search_group = QGroupBox("基础搜索")
         basic_layout = QVBoxLayout(basic_search_group)
+        basic_layout.setSpacing(4)
         
         # 搜索输入框
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("关键词:"))
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("输入搜索关键词，支持短句(逗号分隔)和单词(空格分隔)...")
+        self.search_box.setPlaceholderText("输入搜索关键词...")
         self.search_box.returnPressed.connect(self.search_photos)
         search_layout.addWidget(self.search_box)
         
@@ -248,23 +243,25 @@ class MainWindow(QMainWindow):
         basic_layout.addLayout(search_layout)
         layout.addWidget(basic_search_group)
         
-        # 高级筛选区域
+        # 高级筛选区域（紧凑布局）
         advanced_group = QGroupBox("高级筛选")
         advanced_layout = QVBoxLayout(advanced_group)
+        advanced_layout.setSpacing(4)
         
-        # 第一行：评分和收藏
+        # 第一行：评分、收藏、快速筛选
         row1_layout = QHBoxLayout()
         
         # 评分筛选
-        row1_layout.addWidget(QLabel("最低评分:"))
+        row1_layout.addWidget(QLabel("评分:"))
         self.rating_filter = QSpinBox()
         self.rating_filter.setRange(0, 5)
         self.rating_filter.setValue(0)
+        self.rating_filter.setMaximumWidth(60)
         self.rating_filter.valueChanged.connect(self.search_photos)
         row1_layout.addWidget(self.rating_filter)
         
         # 仅收藏
-        self.favorites_only = QCheckBox("仅收藏")
+        self.favorites_only = QCheckBox("收藏")
         self.favorites_only.stateChanged.connect(self.search_photos)
         row1_layout.addWidget(self.favorites_only)
         
@@ -274,12 +271,14 @@ class MainWindow(QMainWindow):
         self.quick_filter_combo.addItems([
             "所有照片", "收藏", "最近", "未标签", "大尺寸", "小尺寸"
         ])
+        self.quick_filter_combo.setMaximumWidth(100)
         self.quick_filter_combo.currentIndexChanged.connect(self.apply_quick_filter)
         row1_layout.addWidget(self.quick_filter_combo)
         
+        row1_layout.addStretch()
         advanced_layout.addLayout(row1_layout)
         
-        # 第二行：图片信息筛选
+        # 第二行：尺寸和大小筛选
         row2_layout = QHBoxLayout()
         
         # 尺寸筛选
@@ -288,6 +287,7 @@ class MainWindow(QMainWindow):
         self.min_width.setRange(0, 10000)
         self.min_width.setValue(0)
         self.min_width.setSuffix(" px")
+        self.min_width.setMaximumWidth(80)
         self.min_width.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_width)
         
@@ -296,27 +296,31 @@ class MainWindow(QMainWindow):
         self.min_height.setRange(0, 10000)
         self.min_height.setValue(0)
         self.min_height.setSuffix(" px")
+        self.min_height.setMaximumWidth(80)
         self.min_height.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_height)
         
         # 文件大小筛选
-        row2_layout.addWidget(QLabel("最小大小:"))
+        row2_layout.addWidget(QLabel("大小:"))
         self.min_size = QSpinBox()
         self.min_size.setRange(0, 1000000)
         self.min_size.setValue(0)
         self.min_size.setSuffix(" KB")
+        self.min_size.setMaximumWidth(80)
         self.min_size.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_size)
         
+        row2_layout.addStretch()
         advanced_layout.addLayout(row2_layout)
         
-        # 第三行：相机信息筛选
+        # 第三行：相机和日期筛选
         row3_layout = QHBoxLayout()
         
         # 相机品牌
         row3_layout.addWidget(QLabel("相机:"))
         self.camera_filter = QLineEdit()
-        self.camera_filter.setPlaceholderText("相机品牌或型号")
+        self.camera_filter.setPlaceholderText("相机品牌")
+        self.camera_filter.setMaximumWidth(120)
         self.camera_filter.textChanged.connect(self.search_photos)
         row3_layout.addWidget(self.camera_filter)
         
@@ -325,6 +329,7 @@ class MainWindow(QMainWindow):
         self.date_from = QDateEdit()
         self.date_from.setCalendarPopup(True)
         self.date_from.setDate(QDate.currentDate().addDays(-365))
+        self.date_from.setMaximumWidth(100)
         self.date_from.dateChanged.connect(self.search_photos)
         row3_layout.addWidget(self.date_from)
         
@@ -332,9 +337,11 @@ class MainWindow(QMainWindow):
         self.date_to = QDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDate(QDate.currentDate())
+        self.date_to.setMaximumWidth(100)
         self.date_to.dateChanged.connect(self.search_photos)
         row3_layout.addWidget(self.date_to)
         
+        row3_layout.addStretch()
         advanced_layout.addLayout(row3_layout)
         
         layout.addWidget(advanced_group)
@@ -343,12 +350,12 @@ class MainWindow(QMainWindow):
         buttons_layout = QHBoxLayout()
         
         # 清除筛选按钮
-        self.clear_filters_btn = QPushButton("清除筛选")
+        self.clear_filters_btn = QPushButton("清除")
         self.clear_filters_btn.clicked.connect(self.clear_search_filters)
         buttons_layout.addWidget(self.clear_filters_btn)
         
         # 保存搜索按钮
-        self.save_search_btn = QPushButton("保存搜索")
+        self.save_search_btn = QPushButton("保存")
         self.save_search_btn.clicked.connect(self.save_search_condition)
         buttons_layout.addWidget(self.save_search_btn)
         
@@ -357,30 +364,277 @@ class MainWindow(QMainWindow):
         
         return panel
     
-    def create_right_panel(self) -> QWidget:
-        """Create the right panel with photo viewer and controls."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        # Photo viewer (4区 - 照片预览与详细信息区)
-        self.photo_viewer = PhotoViewer(plugin_manager=self.plugin_manager)
+
+    
+    def create_search_dock_widget(self) -> QWidget:
+        """Create the search dock widget with search controls and results."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # 上半部分：搜索控件（固定高度）
+        search_controls = self.create_search_controls()
+        layout.addWidget(search_controls)
+        
+        # 下半部分：搜索结果（可伸缩）
+        self.search_results_widget = ThumbnailWidget()
+        self.search_results_widget.photo_selected.connect(self.on_search_photo_selected)
+        layout.addWidget(self.search_results_widget)
+        
+        return widget
+    
+    def create_photo_display_dock_widget(self) -> QWidget:
+        """Create the photo display dock widget with photo viewer only."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Main photo viewer (主图片显示区域)
+        self.photo_viewer = PhotoViewer()
         layout.addWidget(self.photo_viewer)
-        return panel
+        
+        return widget
+    
+
+    
+
+    
+
     
     def create_dock_widgets(self):
-        """Create dock widgets for albums and tags."""
-        # Albums dock
-        self.albums_dock = QDockWidget(self.get_text("Albums", "相册"), self)
-        self.albums_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        """Create dock widgets for albums, search, photo display, and tags."""
+        # Albums dock (相册管理面板)
+        self.albums_dock = QDockWidget(self.get_text("Albums", "相册管理"), self)
+        self.albums_dock.setObjectName("albums_dock")
+        self.albums_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
         self.album_manager = AlbumManager(self.db_manager, self.photo_manager)
         self.albums_dock.setWidget(self.album_manager)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.albums_dock)
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.albums_dock)
         
-        # Tags dock
+        # Search dock (照片搜索面板)
+        self.search_dock = QDockWidget(self.get_text("Photo Search", "照片搜索"), self)
+        self.search_dock.setObjectName("search_dock")
+        self.search_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
+        search_widget = self.create_search_dock_widget()
+        self.search_dock.setWidget(search_widget)
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.search_dock)
+        
+        # Photo display dock (图片显示面板)
+        self.photo_display_dock = QDockWidget(self.get_text("Photo Display", "图片显示"), self)
+        self.photo_display_dock.setObjectName("photo_display_dock")
+        self.photo_display_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
+        photo_display_widget = self.create_photo_display_dock_widget()
+        self.photo_display_dock.setWidget(photo_display_widget)
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.photo_display_dock)
+        
+        # Tags dock (标签面板)
         self.tags_dock = QDockWidget(self.get_text("Tags", "标签"), self)
-        self.tags_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-        self.tag_manager = TagManager(self.db_manager)
+        self.tags_dock.setObjectName("tags_dock")
+        self.tags_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.tag_manager = TagManager(self.db_manager, self.album_manager)
         self.tags_dock.setWidget(self.tag_manager)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tags_dock)
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.tags_dock)
+        
+        # 设置面板的默认大小和位置
+        self.setup_panel_layout()
+        
+        # 确保所有面板默认可见
+        self.albums_dock.setVisible(True)
+        self.search_dock.setVisible(True)
+        self.photo_display_dock.setVisible(True)
+        self.tags_dock.setVisible(True)
+    
+    def setup_panel_layout(self):
+        """Setup the default panel layout for better usability."""
+        # 设置面板的默认大小比例
+        # 相册管理面板 - 左侧，占20%宽度
+        self.albums_dock.setMinimumWidth(200)
+        self.albums_dock.resize(250, self.height())
+        
+        # 照片搜索面板 - 左侧，占20%宽度
+        self.search_dock.setMinimumWidth(200)
+        self.search_dock.resize(250, self.height())
+        
+        # 图片显示面板 - 右侧，占40%宽度
+        self.photo_display_dock.setMinimumWidth(300)
+        self.photo_display_dock.resize(400, self.height())
+        
+        # 标签面板 - 右侧，占20%宽度
+        self.tags_dock.setMinimumWidth(200)
+        self.tags_dock.resize(250, self.height())
+        
+        # 设置面板的关闭按钮可见，允许用户临时关闭不需要的面板
+        self.albums_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+                                    QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                                    QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+        
+        self.search_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+                                    QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                                    QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+        
+        self.photo_display_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+                                           QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                                           QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+        
+        self.tags_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+                                  QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                                  QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+    
+    def save_layout(self):
+        """保存当前面板布局到配置文件."""
+        try:
+            layout_data = {
+                'window_geometry': {
+                    'x': self.geometry().x(),
+                    'y': self.geometry().y(),
+                    'width': self.geometry().width(),
+                    'height': self.geometry().height()
+                },
+                'window_state': self.saveState().toHex().data().decode(),
+                'panels_visible': {
+                    'albums': self.albums_dock.isVisible(),
+                    'search': self.search_dock.isVisible(),
+                    'photo_display': self.photo_display_dock.isVisible(),
+                    'tags': self.tags_dock.isVisible()
+                },
+                'panels_floating': {
+                    'albums': self.albums_dock.isFloating(),
+                    'search': self.search_dock.isFloating(),
+                    'photo_display': self.photo_display_dock.isFloating(),
+                    'tags': self.tags_dock.isFloating()
+                },
+                'panels_geometry': {
+                    'albums': {
+                        'x': self.albums_dock.geometry().x(),
+                        'y': self.albums_dock.geometry().y(),
+                        'width': self.albums_dock.geometry().width(),
+                        'height': self.albums_dock.geometry().height()
+                    } if self.albums_dock.isFloating() else None,
+                    'search': {
+                        'x': self.search_dock.geometry().x(),
+                        'y': self.search_dock.geometry().y(),
+                        'width': self.search_dock.geometry().width(),
+                        'height': self.search_dock.geometry().height()
+                    } if self.search_dock.isFloating() else None,
+                    'photo_display': {
+                        'x': self.photo_display_dock.geometry().x(),
+                        'y': self.photo_display_dock.geometry().y(),
+                        'width': self.photo_display_dock.geometry().width(),
+                        'height': self.photo_display_dock.geometry().height()
+                    } if self.photo_display_dock.isFloating() else None,
+                    'tags': {
+                        'x': self.tags_dock.geometry().x(),
+                        'y': self.tags_dock.geometry().y(),
+                        'width': self.tags_dock.geometry().width(),
+                        'height': self.tags_dock.geometry().height()
+                    } if self.tags_dock.isFloating() else None
+                }
+            }
+            
+            # 保存到配置文件
+            self.config_manager.set('ui.layout', layout_data)
+            self.logger.info("Layout saved successfully")
+            
+        except Exception as e:
+            self.logger.error("Failed to save layout", error=str(e))
+    
+    def restore_layout(self):
+        """从配置文件恢复面板布局."""
+        try:
+            layout_data = self.config_manager.get('ui.layout', {})
+            self.logger.info("Attempting to restore layout", layout_data=layout_data)
+            
+            if not layout_data:
+                self.logger.info("No saved layout found, using default")
+                return
+            
+            # 恢复窗口几何形状
+            if 'window_geometry' in layout_data:
+                geo = layout_data['window_geometry']
+                self.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
+                self.logger.info("Window geometry restored", geometry=geo)
+            
+            # 恢复窗口状态（包括停靠面板位置）
+            if 'window_state' in layout_data:
+                state_data = layout_data['window_state']
+                state = QByteArray.fromHex(state_data.encode())
+                self.restoreState(state)
+                self.logger.info("Window state restored")
+            
+            # 恢复面板可见性
+            if 'panels_visible' in layout_data:
+                panels = layout_data['panels_visible']
+                if 'albums' in panels:
+                    self.albums_dock.setVisible(panels['albums'])
+                    self.albums_panel_action.setChecked(panels['albums'])
+                if 'search' in panels:
+                    self.search_dock.setVisible(panels['search'])
+                    self.search_panel_action.setChecked(panels['search'])
+                if 'photo_display' in panels:
+                    self.photo_display_dock.setVisible(panels['photo_display'])
+                    self.photo_display_panel_action.setChecked(panels['photo_display'])
+                if 'tags' in panels:
+                    self.tags_dock.setVisible(panels['tags'])
+                    self.tags_panel_action.setChecked(panels['tags'])
+                self.logger.info("Panel visibility restored", panels=panels)
+            
+            # 恢复浮动面板的位置和大小
+            if 'panels_floating' in layout_data and 'panels_geometry' in layout_data:
+                floating = layout_data['panels_floating']
+                geometry = layout_data['panels_geometry']
+                
+                # 恢复浮动面板
+                if 'albums' in floating and floating['albums'] and geometry['albums']:
+                    self.albums_dock.setFloating(True)
+                    geo = geometry['albums']
+                    self.albums_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
+                
+                if 'search' in floating and floating['search'] and geometry['search']:
+                    self.search_dock.setFloating(True)
+                    geo = geometry['search']
+                    self.search_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
+                
+                if 'photo_display' in floating and floating['photo_display'] and geometry['photo_display']:
+                    self.photo_display_dock.setFloating(True)
+                    geo = geometry['photo_display']
+                    self.photo_display_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
+                
+                if 'tags' in floating and floating['tags'] and geometry['tags']:
+                    self.tags_dock.setFloating(True)
+                    geo = geometry['tags']
+                    self.tags_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
+                
+                self.logger.info("Floating panels restored", floating=floating)
+            
+            self.logger.info("Layout restored successfully")
+            
+        except Exception as e:
+            self.logger.error("Failed to restore layout", error=str(e))
+    
+    def reset_layout(self):
+        """重置面板布局到默认状态."""
+        try:
+            # 显示所有面板
+            self.albums_dock.setVisible(True)
+            self.search_dock.setVisible(True)
+            self.photo_display_dock.setVisible(True)
+            self.tags_dock.setVisible(True)
+            
+            # 更新菜单项状态
+            self.albums_panel_action.setChecked(True)
+            self.search_panel_action.setChecked(True)
+            self.photo_display_panel_action.setChecked(True)
+            self.tags_panel_action.setChecked(True)
+            
+            # 重置到默认布局
+            self.setup_panel_layout()
+            
+            # 清除保存的布局
+            self.config_manager.set('ui.layout', {})
+            
+            self.logger.info("Layout reset to default")
+            QMessageBox.information(self, "布局重置", "面板布局已重置为默认状态。")
+            
+        except Exception as e:
+            self.logger.error("Failed to reset layout", error=str(e))
     
     def create_menu_bar(self):
         """Create the menu bar."""
@@ -441,11 +695,25 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu(self.get_text("View", "视图"))
         
         # Album panel toggle
-        self.albums_panel_action = QAction(self.get_text("Albums Panel", "相册面板"), self)
+        self.albums_panel_action = QAction(self.get_text("Albums Panel", "相册管理面板"), self)
         self.albums_panel_action.setCheckable(True)
         self.albums_panel_action.setChecked(True)
         self.albums_panel_action.triggered.connect(self.toggle_albums_panel)
         view_menu.addAction(self.albums_panel_action)
+        
+        # Search panel toggle
+        self.search_panel_action = QAction(self.get_text("Search Panel", "照片搜索面板"), self)
+        self.search_panel_action.setCheckable(True)
+        self.search_panel_action.setChecked(True)
+        self.search_panel_action.triggered.connect(self.toggle_search_panel)
+        view_menu.addAction(self.search_panel_action)
+        
+        # Photo display panel toggle
+        self.photo_display_panel_action = QAction(self.get_text("Photo Display Panel", "图片显示面板"), self)
+        self.photo_display_panel_action.setCheckable(True)
+        self.photo_display_panel_action.setChecked(True)
+        self.photo_display_panel_action.triggered.connect(self.toggle_photo_display_panel)
+        view_menu.addAction(self.photo_display_panel_action)
         
         # Tags panel toggle
         self.tags_panel_action = QAction(self.get_text("Tags Panel", "标签面板"), self)
@@ -453,6 +721,17 @@ class MainWindow(QMainWindow):
         self.tags_panel_action.setChecked(True)
         self.tags_panel_action.triggered.connect(self.toggle_tags_panel)
         view_menu.addAction(self.tags_panel_action)
+        
+        view_menu.addSeparator()
+        
+        # Layout management
+        save_layout_action = QAction(self.get_text("Save Layout", "保存布局"), self)
+        save_layout_action.triggered.connect(self.save_layout)
+        view_menu.addAction(save_layout_action)
+        
+        reset_layout_action = QAction(self.get_text("Reset Layout", "重置布局"), self)
+        reset_layout_action.triggered.connect(self.reset_layout)
+        view_menu.addAction(reset_layout_action)
         
         # Tools menu
         tools_menu = menubar.addMenu(self.get_text("Tools", "工具"))
@@ -476,15 +755,15 @@ class MainWindow(QMainWindow):
         plugin_manager_action.triggered.connect(self.show_plugin_manager)
         tools_menu.addAction(plugin_manager_action)
         
-        # 新增：文件名修改工具
-        rename_tool_action = QAction(self.get_text("Rename Files", "修改文件名"), self)
-        rename_tool_action.triggered.connect(self.show_rename_tool_dialog)
-        tools_menu.addAction(rename_tool_action)
+        # 添加插件菜单动作
+        self.add_plugin_menu_actions(tools_menu)
         
-        # Google翻译插件配置
-        google_translate_config_action = QAction(self.get_text("Google Translate Plugin Config", "Google翻译插件配置"), self)
-        google_translate_config_action.triggered.connect(self.show_google_translate_config)
-        tools_menu.addAction(google_translate_config_action)
+        tools_menu.addSeparator()
+        
+        # 代理配置
+        proxy_config_action = QAction(self.get_text("Proxy Configuration", "代理服务器配置"), self)
+        proxy_config_action.triggered.connect(self.show_proxy_config)
+        tools_menu.addAction(proxy_config_action)
         
         # Settings menu
         settings_menu = menubar.addMenu(self.get_text("Settings", "设置"))
@@ -531,6 +810,7 @@ class MainWindow(QMainWindow):
     def create_toolbar(self):
         """Create the toolbar."""
         toolbar = self.addToolBar(self.get_text("Main Toolbar", "主工具栏"))
+        toolbar.setObjectName("main_toolbar")
         toolbar.setMovable(True)
         
         # Import actions
@@ -571,11 +851,19 @@ class MainWindow(QMainWindow):
         self.filter_combo.currentIndexChanged.connect(self.apply_quick_filter)
         toolbar.addWidget(self.filter_combo)
         
-        # 添加全新刷新地理位置按钮
-        self.refresh_all_location_btn = QPushButton("全新刷新地理位置")
-        self.refresh_all_location_btn.setToolTip("对所有照片重新查询地理位置信息")
-        self.refresh_all_location_btn.clicked.connect(self.refresh_all_locations)
-        toolbar.addWidget(self.refresh_all_location_btn)
+        toolbar.addSeparator()
+        
+        # AI信息刷新按钮
+        refresh_current_ai_action = QAction(self.get_text("Refresh Current AI Info", "刷新当前图片AI信息"), self)
+        refresh_current_ai_action.triggered.connect(self.refresh_current_photo_ai_info)
+        toolbar.addAction(refresh_current_ai_action)
+        
+        refresh_album_ai_action = QAction(self.get_text("Refresh Album AI Info", "刷新相册AI信息"), self)
+        refresh_album_ai_action.triggered.connect(self.refresh_album_ai_info)
+        toolbar.addAction(refresh_album_ai_action)
+        
+        # 添加插件工具栏动作
+        self.add_plugin_toolbar_actions(toolbar)
     
     def create_status_bar(self):
         """Create the status bar."""
@@ -762,31 +1050,6 @@ class MainWindow(QMainWindow):
     def import_directory(self, directory: str):
         """Import photos from a directory."""
         try:
-            # 显示标签导入对话框
-            from .tag_import_dialog import TagImportDialog
-            tag_dialog = TagImportDialog(directory, self)
-            
-            # 连接信号
-            tag_dialog.import_confirmed.connect(self.on_tag_import_confirmed)
-            
-            # 显示对话框
-            if tag_dialog.exec() == QDialog.DialogCode.Accepted:
-                # 用户确认了导入设置，继续处理
-                pass
-            else:
-                # 用户取消了导入
-                return
-            
-        except Exception as e:
-            self.logger.error("Failed to import directory", 
-                            directory=directory, error=str(e))
-            QMessageBox.critical(self, "Import Error", f"Failed to import directory: {str(e)}")
-    
-    def on_tag_import_confirmed(self, import_settings: dict):
-        """处理标签导入确认"""
-        try:
-            directory = import_settings["directory_path"]
-            
             # Create album with directory name
             directory_name = Path(directory).name
             album_data = {
@@ -807,13 +1070,12 @@ class MainWindow(QMainWindow):
                     self.album_manager.load_albums()
                     self.album_manager.select_album(album_id)
             
-            # Start import worker with album_id and tag settings
-            self.import_worker = ImportWorkerWithTags(
+            # Start import worker
+            self.import_worker = ImportWorker(
                 self.photo_manager, 
                 directory, 
                 True, 
-                album_id, 
-                import_settings
+                album_id
             )
             self.import_worker.progress.connect(self.update_import_progress)
             self.import_worker.finished.connect(lambda result: self.on_import_finished(result, None))
@@ -821,8 +1083,11 @@ class MainWindow(QMainWindow):
             self.import_worker.start()
             
         except Exception as e:
-            self.logger.error("Failed to start import with tags", error=str(e))
-            QMessageBox.critical(self, "Import Error", f"Failed to start import: {str(e)}")
+            self.logger.error("Failed to import directory", 
+                            directory=directory, error=str(e))
+            QMessageBox.critical(self, "Import Error", f"Failed to import directory: {str(e)}")
+    
+
     
     def update_import_progress(self, current: int, total: int):
         """Update import progress."""
@@ -969,6 +1234,8 @@ class MainWindow(QMainWindow):
         # Display results in search results widget
         if hasattr(self, 'search_results_widget'):
             self.search_results_widget.display_photos(results)
+        else:
+            self.logger.warning("search_results_widget not found")
         
         # Update status
         self.update_photo_count(len(results))
@@ -1214,6 +1481,9 @@ class MainWindow(QMainWindow):
     def on_album_selected(self, album_id: int):
         """Handle album selection."""
         try:
+            # 设置当前选中的相册ID
+            self.current_album_id = album_id
+            
             # 获取相册中的照片列表
             album_photos = self.db_manager.get_album_photos(album_id)
             self.current_album_photos = album_photos
@@ -1347,6 +1617,16 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'albums_dock'):
             self.albums_dock.setVisible(checked)
     
+    def toggle_search_panel(self, checked: bool):
+        """Toggle search panel visibility."""
+        if hasattr(self, 'search_dock'):
+            self.search_dock.setVisible(checked)
+    
+    def toggle_photo_display_panel(self, checked: bool):
+        """Toggle photo display panel visibility."""
+        if hasattr(self, 'photo_display_dock'):
+            self.photo_display_dock.setVisible(checked)
+    
     def toggle_tags_panel(self, checked: bool):
         """Toggle tags panel visibility."""
         if hasattr(self, 'tags_dock'):
@@ -1413,6 +1693,70 @@ class MainWindow(QMainWindow):
         dialog.plugins_changed.connect(self.on_plugins_changed)
         dialog.exec()
     
+    def add_plugin_menu_actions(self, tools_menu):
+        """添加插件菜单动作"""
+        try:
+            # 获取插件的菜单动作
+            plugin_menu_actions = self.plugin_manager.get_plugin_menu_actions()
+            
+            for plugin_name, actions in plugin_menu_actions.items():
+                for action_data in actions:
+                    if action_data.get("menu") == "工具":
+                        # 创建动作
+                        action = QAction(action_data["title"], self)
+                        action.setData({
+                            "plugin_name": plugin_name,
+                            "action_name": action_data["action"]
+                        })
+                        action.triggered.connect(self.handle_plugin_action)
+                        tools_menu.addAction(action)
+                        
+        except Exception as e:
+            self.logger.error("Failed to add plugin menu actions", error=str(e))
+    
+    def handle_plugin_action(self):
+        """处理插件动作"""
+        try:
+            action = self.sender()
+            if action and hasattr(action, 'data'):
+                data = action.data()
+                plugin_name = data["plugin_name"]
+                action_name = data["action_name"]
+                
+                # 获取插件实例
+                plugin = self.plugin_manager.get_plugin(plugin_name)
+                if plugin and hasattr(plugin, action_name):
+                    # 调用插件方法
+                    method = getattr(plugin, action_name)
+                    method(self)  # 传递self作为parent参数
+                else:
+                    self.logger.error("Plugin action not found", plugin=plugin_name, action=action_name)
+                    
+        except Exception as e:
+            self.logger.error("Failed to handle plugin action", error=str(e))
+            QMessageBox.critical(self, "错误", f"插件动作执行失败：{str(e)}")
+    
+    def add_plugin_toolbar_actions(self, toolbar):
+        """添加插件工具栏动作"""
+        try:
+            # 获取插件的工具栏动作
+            plugin_toolbar_actions = self.plugin_manager.get_plugin_toolbar_actions()
+            
+            for plugin_name, actions in plugin_toolbar_actions.items():
+                for action_data in actions:
+                    # 创建动作
+                    action = QAction(action_data["title"], self)
+                    action.setToolTip(action_data.get("description", ""))
+                    action.setData({
+                        "plugin_name": plugin_name,
+                        "action_name": action_data["action"]
+                    })
+                    action.triggered.connect(self.handle_plugin_action)
+                    toolbar.addAction(action)
+                    
+        except Exception as e:
+            self.logger.error("Failed to add plugin toolbar actions", error=str(e))
+    
     def show_google_translate_config(self):
         """显示Google翻译插件配置对话框"""
         try:
@@ -1422,6 +1766,17 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.logger.error("Failed to show Google Translate config", error=str(e))
             QMessageBox.critical(self, "错误", f"无法打开Google翻译插件配置：{str(e)}")
+    
+    def show_proxy_config(self):
+        """显示代理配置对话框"""
+        try:
+            # 导入代理配置对话框
+            from plugins.florence2_reverse_plugin.ui.proxy_config_dialog import ProxyConfigDialog
+            dialog = ProxyConfigDialog(self)
+            dialog.exec()
+        except Exception as e:
+            self.logger.error("Failed to show proxy config", error=str(e))
+            QMessageBox.critical(self, "错误", f"无法打开代理配置对话框：{str(e)}")
     
     def repair_file_paths(self):
         """Repair missing file paths by searching for moved files."""
@@ -1574,13 +1929,92 @@ class MainWindow(QMainWindow):
             if hasattr(action, 'data'):
                 action.setChecked(action.data() == language_code)
     
+
+    
+
+    
     def on_plugins_changed(self):
         """Handle plugin changes."""
         # In a real implementation, this would reload plugins
         self.logger.info("Plugins changed")
     
+    def refresh_current_photo_ai_info(self):
+        """刷新当前选中图片的AI信息"""
+        try:
+            current_photo_id = self.get_current_photo_id()
+            if current_photo_id <= 0:
+                QMessageBox.warning(self, "警告", "请先选择一张图片")
+                return
+            
+            # 显示进度对话框
+            progress = QProgressDialog("正在刷新AI信息...", "取消", 0, 1, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setValue(0)
+            
+            # 刷新AI信息
+            success = self.photo_manager.refresh_photo_ai_metadata(current_photo_id)
+            
+            progress.setValue(1)
+            
+            if success:
+                QMessageBox.information(self, "成功", "AI信息刷新成功")
+                # 重新加载当前图片信息
+                self.update_photo_info(current_photo_id)
+                self.update_tags_for_photo(current_photo_id)
+            else:
+                QMessageBox.warning(self, "警告", "AI信息刷新失败")
+        
+        except Exception as e:
+            self.logger.error("Failed to refresh current photo AI info", error=str(e))
+            QMessageBox.critical(self, "错误", f"刷新AI信息时发生错误：{str(e)}")
+    
+    def refresh_album_ai_info(self):
+        """刷新当前相册中所有图片的AI信息"""
+        try:
+            # 获取当前选中的相册
+            if not hasattr(self, 'current_album_id') or not self.current_album_id:
+                QMessageBox.warning(self, "警告", "请先选择一个相册")
+                return
+            
+            # 确认对话框
+            reply = QMessageBox.question(
+                self, 
+                "确认刷新", 
+                f"确定要刷新相册中所有图片的AI信息吗？\n这可能需要一些时间。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            
+            # 显示进度对话框
+            progress = QProgressDialog("正在刷新相册AI信息...", "取消", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setValue(0)
+            
+            # 刷新相册AI信息
+            result = self.photo_manager.refresh_album_ai_metadata(self.current_album_id)
+            
+            progress.close()
+            
+            # 显示结果
+            message = f"刷新完成！\n成功：{result['success']} 张\n失败：{result['failed']} 张\n总计：{result['total']} 张"
+            QMessageBox.information(self, "刷新完成", message)
+            
+            # 重新加载相册
+            if self.album_manager:
+                self.album_manager.load_album_photos(self.current_album_id)
+        
+        except Exception as e:
+            self.logger.error("Failed to refresh album AI info", error=str(e))
+            QMessageBox.critical(self, "错误", f"刷新相册AI信息时发生错误：{str(e)}")
+    
     def closeEvent(self, event):
         """Handle application close."""
+        # 保存当前布局
+        self.save_layout()
+        
+        # 保存其他设置
         self.save_settings()
         
         # Unload plugins
@@ -1588,19 +2022,6 @@ class MainWindow(QMainWindow):
         
         self.logger.info("Application closing")
         event.accept()
-
-    def refresh_all_locations(self):
-        """批量刷新所有照片的地理位置信息。"""
-        # TODO: 遍历所有照片，调用插件/服务批量刷新地理位置
-        # 这里只做占位，实际应异步处理并有进度提示
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "刷新地理位置", "已触发全新刷新地理位置信息（实际功能待实现）")
-
-    def show_rename_tool_dialog(self):
-        """弹出文件名修改工具对话框"""
-        from .rename_tool_dialog import RenameToolDialog
-        dialog = RenameToolDialog(self, photo_manager=self.photo_manager)
-        dialog.exec()
 
 
 def main():

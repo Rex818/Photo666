@@ -1,0 +1,42 @@
+{
+  "enabled": true,
+  "models": {
+    "default_model": "microsoft/Florence-2-large",
+    "available_models": [
+      "microsoft/Florence-2-base",
+      "microsoft/Florence-2-base-ft",
+      "microsoft/Florence-2-large",
+      "microsoft/Florence-2-large-ft",
+      "MiaoshouAI/Florence-2-base-PromptGen-v1.5",
+      "MiaoshouAI/Florence-2-large-PromptGen-v1.5"
+    ],
+    "custom_path": "E:/Cursor-test/Florence-2-large"
+  },
+  "inference": {
+    "precision": "fp16",
+    "attention": "sdpa",
+    "max_new_tokens": 1024,
+    "num_beams": 3,
+    "do_sample": true,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "default_level": "normal"
+  },
+  "output": {
+    "save_to_file": true,
+    "save_to_database": true,
+    "auto_display": true,
+    "file_encoding": "utf-8"
+  },
+  "performance": {
+    "batch_size": 4,
+    "use_gpu": true,
+    "cache_models": true,
+    "max_memory_usage": 0.8
+  },
+  "ui": {
+    "show_progress": true,
+    "auto_refresh": true,
+    "confirm_batch_operation": true
+  }
+}

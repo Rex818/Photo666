@@ -3,199 +3,465 @@
 标签导入对话框
 """
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, 
-    QComboBox, QPushButton, QGroupBox, QTextEdit, QMessageBox
-)
-from PyQt6.QtCore import Qt, pyqtSignal
+import os
+import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QCheckBox, QGroupBox, QButtonGroup, QRadioButton,
+    QTextEdit, QProgressBar, QMessageBox, QFileDialog
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, pyqtSignal as Signal
+from PyQt6.QtGui import QFont
+
+class TagImportWorker(QThread):
+    """标签导入工作线程"""
+    
+    progress_updated = Signal(int, str)  # progress, message
+    import_finished = Signal(dict)  # results
+    import_error = Signal(str)  # error message
+    
+    def __init__(self, photo_paths: List[str], tag_type: str, language: str, db_manager):
+        super().__init__()
+        self.photo_paths = photo_paths
+        self.tag_type = tag_type  # 'normal', 'simple', 'detailed'
+        self.language = language  # 'chinese', 'english'
+        self.db_manager = db_manager
+        self.cancelled = False
+        
+    def run(self):
+        """执行标签导入"""
+        try:
+            results = {
+                'total_photos': len(self.photo_paths),
+                'processed_photos': 0,
+                'imported_tags': 0,
+                'skipped_photos': 0,
+                'errors': []
+            }
+            
+            for i, photo_path in enumerate(self.photo_paths):
+                if self.cancelled:
+                    break
+                    
+                try:
+                    self.progress_updated.emit(
+                        int((i / len(self.photo_paths)) * 100),
+                        f"处理图片: {Path(photo_path).name}"
+                    )
+                    
+                    # 查找标签文件
+                    tag_file = self.find_tag_file(photo_path)
+                    if tag_file:
+                        # 读取标签内容
+                        tags = self.read_tag_file(tag_file)
+                        if tags:
+                            # 导入到数据库
+                            success = self.import_tags_to_database(photo_path, tags)
+                            if success:
+                                results['imported_tags'] += 1
+                            else:
+                                results['errors'].append(f"导入失败: {Path(photo_path).name}")
+                        else:
+                            results['skipped_photos'] += 1
+                    else:
+                        results['skipped_photos'] += 1
+                        
+                    results['processed_photos'] += 1
+                    
+                except Exception as e:
+                    results['errors'].append(f"处理失败 {Path(photo_path).name}: {str(e)}")
+                    results['processed_photos'] += 1
+                    
+            if not self.cancelled:
+                self.import_finished.emit(results)
+                
+        except Exception as e:
+            self.import_error.emit(f"导入过程出错: {str(e)}")
+            
+    def find_tag_file(self, photo_path: str) -> Optional[str]:
+        """查找标签文件"""
+        try:
+            photo_dir = Path(photo_path).parent
+            photo_name = Path(photo_path).stem
+            
+            # 可能的标签文件名
+            possible_names = [
+                f"{photo_name}.txt",
+                f"{photo_name}_tags.txt",
+                f"{photo_name}_labels.txt",
+                f"{photo_name}.json",
+                f"{photo_name}_tags.json",
+                f"{photo_name}_labels.json"
+            ]
+            
+            for name in possible_names:
+                tag_file = photo_dir / name
+                if tag_file.exists():
+                    return str(tag_file)
+                    
+            return None
+            
+        except Exception as e:
+            print(f"查找标签文件失败: {str(e)}")
+            return None
+            
+    def read_tag_file(self, tag_file: str) -> Optional[str]:
+        """读取标签文件内容"""
+        try:
+            file_path = Path(tag_file)
+            
+            if file_path.suffix.lower() == '.json':
+                # 读取JSON文件
+                with open(tag_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # 尝试不同的JSON结构
+                    if isinstance(data, dict):
+                        # 如果是字典，尝试常见的键名
+                        for key in ['tags', 'labels', 'description', 'caption', 'text']:
+                            if key in data:
+                                content = data[key]
+                                if isinstance(content, list):
+                                    return json.dumps(content)  # 返回JSON字符串
+                                elif isinstance(content, str):
+                                    return content
+                    elif isinstance(data, list):
+                        return json.dumps(data)  # 返回JSON字符串
+                    elif isinstance(data, str):
+                        return data
+            else:
+                # 读取文本文件
+                with open(tag_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        # 如果是逗号分隔的标签，转换为JSON数组
+                        tags = [tag.strip() for tag in content.split(',') if tag.strip()]
+                        return json.dumps(tags) if tags else None
+                    return None
+                    
+            return None
+            
+        except Exception as e:
+            print(f"读取标签文件失败 {tag_file}: {str(e)}")
+            return None
+            
+    def _is_chinese_text(self, text: str) -> bool:
+        """判断文本是否为中文"""
+        import re
+        # 检查是否包含中文字符
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+        return bool(chinese_pattern.search(text))
+    
+    def _separate_tags_by_language(self, tags_list: list) -> tuple:
+        """将标签按语言分离"""
+        chinese_tags = []
+        english_tags = []
+        
+        for tag in tags_list:
+            if isinstance(tag, str):
+                if self._is_chinese_text(tag):
+                    chinese_tags.append(tag)
+                else:
+                    english_tags.append(tag)
+        
+        return english_tags, chinese_tags
+    
+    def import_tags_to_database(self, photo_path: str, tags: str) -> bool:
+        """导入标签到数据库"""
+        try:
+            import json
+            
+            # 根据用户选择的标签类型确定数据库字段（这是显示区域，不是内容类型）
+            field_mapping = {
+                'normal': 'normal_tags',
+                'simple': 'simple_tags',
+                'detailed': 'detailed_tags'
+            }
+            
+            field_name = field_mapping.get(self.tag_type)
+            if not field_name:
+                return False
+            
+            # 解析新标签
+            try:
+                new_tags_list = json.loads(tags) if tags else []
+            except:
+                new_tags_list = [tags] if tags else []
+            
+            # 分离中英文标签
+            english_tags, chinese_tags = self._separate_tags_by_language(new_tags_list)
+            
+            # 读取现有的标签数据
+            query = f"SELECT {field_name}, tag_translations FROM photos WHERE filepath = ?"
+            result = self.db_manager.fetch_one(query, (photo_path,))
+            
+            if result:
+                existing_tags = result[0] if result[0] else '[]'
+                existing_translations = result[1] if result[1] else '{}'
+            else:
+                existing_tags = '[]'
+                existing_translations = '{}'
+            
+            # 解析现有数据
+            try:
+                existing_tags_list = json.loads(existing_tags) if existing_tags else []
+                existing_translations_dict = json.loads(existing_translations) if existing_translations else {}
+            except:
+                existing_tags_list = []
+                existing_translations_dict = {}
+            
+            # 根据用户选择的语言进行导入
+            if self.language == 'chinese':
+                # 用户选择中文：将标签导入到用户指定的区域，中文标签作为翻译
+                final_tags = existing_tags_list + english_tags
+                final_translations = existing_translations_dict.copy()
+                for tag in chinese_tags:
+                    # 为中文标签生成一个英文键
+                    english_key = f"chinese_tag_{len(final_translations)}"
+                    final_translations[english_key] = tag
+            else:
+                # 用户选择英文：将标签导入到用户指定的区域，英文标签作为主标签
+                final_tags = existing_tags_list + english_tags
+                final_translations = existing_translations_dict.copy()
+                for tag in chinese_tags:
+                    # 为中文标签生成一个英文键
+                    english_key = f"chinese_tag_{len(final_translations)}"
+                    final_translations[english_key] = tag
+            
+            # 更新数据库
+            update_query = f"UPDATE photos SET {field_name} = ?, tag_translations = ? WHERE filepath = ?"
+            success = self.db_manager.execute(update_query, (json.dumps(final_tags), json.dumps(final_translations), photo_path))
+            
+            return success
+            
+        except Exception as e:
+            print(f"导入标签到数据库失败: {str(e)}")
+            return False
+            
+    def cancel(self):
+        """取消导入"""
+        self.cancelled = True
 
 
 class TagImportDialog(QDialog):
     """标签导入对话框"""
     
-    # 信号：用户确认导入设置
-    import_confirmed = pyqtSignal(dict)  # 传递导入设置
-    
-    def __init__(self, directory_path: str, parent=None):
+    def __init__(self, photo_paths: List[str], db_manager, parent=None):
         super().__init__(parent)
-        self.directory_path = Path(directory_path)
-        self.tag_files_found = self._scan_tag_files()
-        self.init_ui()
-    
-    def _scan_tag_files(self) -> Dict[str, List[str]]:
-        """扫描目录中的标签文件"""
-        tag_files = {
-            "simple": [],
-            "normal": [],
-            "detailed": []
-        }
+        self.photo_paths = photo_paths
+        self.db_manager = db_manager
+        self.import_worker = None
         
-        try:
-            # 扫描目录中的所有.TXT文件
-            for txt_file in self.directory_path.glob("*.txt"):
-                # 检查是否有对应的图片文件
-                base_name = txt_file.stem
-                for ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp']:
-                    img_file = txt_file.parent / f"{base_name}{ext}"
-                    if img_file.exists():
-                        # 找到对应的图片文件，添加到标签文件列表
-                        tag_files["normal"].append(str(txt_file))
-                        break
-            
-            # 这里可以根据文件名模式或其他规则来分类标签文件
-            # 例如：simple_*.txt, detailed_*.txt 等
-            # 目前先全部归类为normal类型
-            
-        except Exception as e:
-            print(f"扫描标签文件时出错: {e}")
+        self.setup_ui()
         
-        return tag_files
-    
-    def init_ui(self):
-        """初始化用户界面"""
-        self.setWindowTitle("标签导入设置")
-        self.setModal(True)
-        self.resize(500, 400)
+    def setup_ui(self):
+        """设置界面"""
+        self.setWindowTitle("导入标签")
+        self.setMinimumSize(500, 400)
         
         layout = QVBoxLayout(self)
         
-        # 目录信息
-        dir_info = QLabel(f"导入目录: {self.directory_path}")
-        dir_info.setWordWrap(True)
-        layout.addWidget(dir_info)
-        
-        # 标签文件检测结果
-        total_tag_files = sum(len(files) for files in self.tag_files_found.values())
-        if total_tag_files > 0:
-            tag_info = QLabel(f"检测到 {total_tag_files} 个标签文件")
-            tag_info.setStyleSheet("color: green; font-weight: bold;")
-        else:
-            tag_info = QLabel("未检测到标签文件")
-            tag_info.setStyleSheet("color: orange; font-weight: bold;")
-        layout.addWidget(tag_info)
-        
-        # 导入选项组
-        import_group = QGroupBox("导入选项")
-        import_layout = QVBoxLayout(import_group)
-        
-        # 是否导入标签
-        self.import_tags_checkbox = QCheckBox("导入标签文件")
-        self.import_tags_checkbox.setChecked(total_tag_files > 0)
-        self.import_tags_checkbox.toggled.connect(self.on_import_tags_toggled)
-        import_layout.addWidget(self.import_tags_checkbox)
+        # 标题
+        title_label = QLabel("选择标签类型和语言")
+        title_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        layout.addWidget(title_label)
         
         # 标签类型选择
-        type_layout = QHBoxLayout()
-        type_layout.addWidget(QLabel("标签类型:"))
+        tag_type_group = QGroupBox("标签类型")
+        tag_type_layout = QVBoxLayout(tag_type_group)
         
-        self.tag_type_combo = QComboBox()
-        self.tag_type_combo.addItems([
-            "普通标签 (normal)",
-            "简单标签 (simple)", 
-            "详细标签 (detailed)"
-        ])
-        self.tag_type_combo.setCurrentText("普通标签 (normal)")
-        type_layout.addWidget(self.tag_type_combo)
-        type_layout.addStretch()
+        self.tag_type_group = QButtonGroup()
         
-        import_layout.addLayout(type_layout)
+        self.normal_tags_radio = QRadioButton("普通标签")
+        self.normal_tags_radio.setChecked(True)
+        self.tag_type_group.addButton(self.normal_tags_radio, 1)
+        tag_type_layout.addWidget(self.normal_tags_radio)
         
-        # 标签文件预览
-        if total_tag_files > 0:
-            preview_group = QGroupBox("标签文件预览")
-            preview_layout = QVBoxLayout(preview_group)
-            
-            self.preview_text = QTextEdit()
-            self.preview_text.setMaximumHeight(150)
-            self.preview_text.setReadOnly(True)
-            
-            # 显示找到的标签文件
-            preview_content = "找到的标签文件:\n"
-            for tag_type, files in self.tag_files_found.items():
-                if files:
-                    preview_content += f"\n{tag_type.upper()} 标签 ({len(files)} 个):\n"
-                    for file_path in files[:5]:  # 只显示前5个
-                        preview_content += f"  • {Path(file_path).name}\n"
-                    if len(files) > 5:
-                        preview_content += f"  ... 还有 {len(files) - 5} 个文件\n"
-            
-            self.preview_text.setPlainText(preview_content)
-            preview_layout.addWidget(self.preview_text)
-            
-            layout.addWidget(preview_group)
+        self.simple_tags_radio = QRadioButton("简单标签")
+        self.tag_type_group.addButton(self.simple_tags_radio, 2)
+        tag_type_layout.addWidget(self.simple_tags_radio)
         
-        layout.addWidget(import_group)
+        self.detailed_tags_radio = QRadioButton("详细标签")
+        self.tag_type_group.addButton(self.detailed_tags_radio, 3)
+        tag_type_layout.addWidget(self.detailed_tags_radio)
+        
+        layout.addWidget(tag_type_group)
+        
+        # 语言选择
+        language_group = QGroupBox("语言")
+        language_layout = QHBoxLayout(language_group)
+        
+        self.language_group = QButtonGroup()
+        
+        self.chinese_radio = QRadioButton("中文")
+        self.chinese_radio.setChecked(True)
+        self.language_group.addButton(self.chinese_radio, 1)
+        language_layout.addWidget(self.chinese_radio)
+        
+        self.english_radio = QRadioButton("英文")
+        self.language_group.addButton(self.english_radio, 2)
+        language_layout.addWidget(self.english_radio)
+        
+        layout.addWidget(language_group)
+        
+        # 覆盖选项
+        self.overwrite_checkbox = QCheckBox("覆盖现有标签")
+        self.overwrite_checkbox.setChecked(True)
+        layout.addWidget(self.overwrite_checkbox)
+        
+        # 统计信息
+        stats_group = QGroupBox("统计信息")
+        stats_layout = QVBoxLayout(stats_group)
+        
+        self.stats_label = QLabel(f"待处理图片数量: {len(self.photo_paths)}")
+        stats_layout.addWidget(self.stats_label)
+        
+        layout.addWidget(stats_group)
+        
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+        
+        # 日志显示
+        self.log_text = QTextEdit()
+        self.log_text.setMaximumHeight(150)
+        self.log_text.setReadOnly(True)
+        layout.addWidget(self.log_text)
         
         # 按钮
         button_layout = QHBoxLayout()
-        button_layout.addStretch()
         
-        self.cancel_button = QPushButton("取消")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
+        self.import_btn = QPushButton("开始导入")
+        self.import_btn.clicked.connect(self.start_import)
+        button_layout.addWidget(self.import_btn)
         
-        self.confirm_button = QPushButton("确认导入")
-        self.confirm_button.clicked.connect(self.confirm_import)
-        self.confirm_button.setDefault(True)
-        button_layout.addWidget(self.confirm_button)
+        self.cancel_btn = QPushButton("取消")
+        self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_btn)
         
         layout.addLayout(button_layout)
         
-        # 初始状态设置
-        self.on_import_tags_toggled(self.import_tags_checkbox.isChecked())
-    
-    def on_import_tags_toggled(self, checked: bool):
-        """标签导入选项切换"""
-        self.tag_type_combo.setEnabled(checked)
-        self.confirm_button.setEnabled(True)
-    
-    def confirm_import(self):
-        """确认导入设置"""
+    def get_selected_options(self) -> Tuple[str, str]:
+        """获取选择的选项"""
+        # 获取标签类型
+        tag_type_map = {
+            1: 'normal',
+            2: 'simple', 
+            3: 'detailed'
+        }
+        tag_type = tag_type_map.get(self.tag_type_group.checkedId(), 'normal')
+        
+        # 获取语言
+        language_map = {
+            1: 'chinese',
+            2: 'english'
+        }
+        language = language_map.get(self.language_group.checkedId(), 'chinese')
+        
+        return tag_type, language
+        
+    def start_import(self):
+        """开始导入"""
         try:
-            # 获取用户设置
-            import_tags = self.import_tags_checkbox.isChecked()
-            tag_type_text = self.tag_type_combo.currentText()
+            tag_type, language = self.get_selected_options()
             
-            # 解析标签类型
-            tag_type_map = {
-                "普通标签 (normal)": "normal",
-                "简单标签 (simple)": "simple", 
-                "详细标签 (detailed)": "detailed"
-            }
-            tag_type = tag_type_map.get(tag_type_text, "normal")
+            # 禁用按钮
+            self.import_btn.setEnabled(False)
+            self.cancel_btn.setText("取消导入")
+            self.cancel_btn.clicked.disconnect()
+            self.cancel_btn.clicked.connect(self.cancel_import)
             
-            # 准备导入设置
-            import_settings = {
-                "import_tags": import_tags,
-                "tag_type": tag_type,
-                "tag_files_found": self.tag_files_found,
-                "directory_path": str(self.directory_path)
-            }
+            # 显示进度条
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(0)
             
-            # 发送确认信号
-            self.import_confirmed.emit(import_settings)
-            self.accept()
+            # 清空日志
+            self.log_text.clear()
+            self.log_message("开始导入标签...")
+            
+            # 创建工作线程
+            self.import_worker = TagImportWorker(
+                self.photo_paths, tag_type, language, self.db_manager
+            )
+            self.import_worker.progress_updated.connect(self.update_progress)
+            self.import_worker.import_finished.connect(self.import_finished)
+            self.import_worker.import_error.connect(self.import_error)
+            
+            # 启动线程
+            self.import_worker.start()
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"设置导入参数时出错: {str(e)}")
-    
-    def get_import_settings(self) -> Dict:
-        """获取导入设置（用于外部调用）"""
-        import_tags = self.import_tags_checkbox.isChecked()
-        tag_type_text = self.tag_type_combo.currentText()
+            self.log_message(f"启动导入失败: {str(e)}")
+            self.reset_ui()
+            
+    def update_progress(self, progress: int, message: str):
+        """更新进度"""
+        self.progress_bar.setValue(progress)
+        self.log_message(message)
         
-        tag_type_map = {
-            "普通标签 (normal)": "normal",
-            "简单标签 (simple)": "simple", 
-            "详细标签 (detailed)": "detailed"
-        }
-        tag_type = tag_type_map.get(tag_type_text, "normal")
+    def import_finished(self, results: dict):
+        """导入完成"""
+        self.log_message("导入完成!")
+        self.log_message(f"处理图片: {results['processed_photos']}/{results['total_photos']}")
+        self.log_message(f"导入标签: {results['imported_tags']}")
+        self.log_message(f"跳过图片: {results['skipped_photos']}")
         
-        return {
-            "import_tags": import_tags,
-            "tag_type": tag_type,
-            "tag_files_found": self.tag_files_found,
-            "directory_path": str(self.directory_path)
-        } 
+        if results['errors']:
+            self.log_message(f"错误数量: {len(results['errors'])}")
+            for error in results['errors'][:5]:  # 只显示前5个错误
+                self.log_message(f"  - {error}")
+                
+        self.progress_bar.setValue(100)
+        
+        # 显示完成消息
+        QMessageBox.information(
+            self, 
+            "导入完成", 
+            f"标签导入完成!\n"
+            f"处理图片: {results['processed_photos']}/{results['total_photos']}\n"
+            f"导入标签: {results['imported_tags']}\n"
+            f"跳过图片: {results['skipped_photos']}"
+        )
+        
+        self.accept()
+        
+    def import_error(self, error_message: str):
+        """导入错误"""
+        self.log_message(f"导入错误: {error_message}")
+        QMessageBox.critical(self, "导入错误", f"标签导入失败: {error_message}")
+        self.reset_ui()
+        
+    def cancel_import(self):
+        """取消导入"""
+        if self.import_worker and self.import_worker.isRunning():
+            self.import_worker.cancel()
+            self.import_worker.wait()
+            
+        self.log_message("导入已取消")
+        self.reset_ui()
+        self.reject()
+        
+    def reset_ui(self):
+        """重置界面"""
+        self.import_btn.setEnabled(True)
+        self.cancel_btn.setText("取消")
+        self.cancel_btn.clicked.disconnect()
+        self.cancel_btn.clicked.connect(self.reject)
+        self.progress_bar.setVisible(False)
+        
+    def log_message(self, message: str):
+        """记录日志消息"""
+        self.log_text.append(message)
+        
+        # 滚动到底部
+        scrollbar = self.log_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        
+    def closeEvent(self, event):
+        """关闭事件"""
+        if self.import_worker and self.import_worker.isRunning():
+            self.import_worker.cancel()
+            self.import_worker.wait()
+        super().closeEvent(event) 

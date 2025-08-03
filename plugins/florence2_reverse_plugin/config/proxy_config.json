@@ -1,0 +1,9 @@
+{
+  "auto_detect": true,
+  "manual_proxy": {
+    "http": "",
+    "https": "",
+    "ftp": ""
+  },
+  "use_manual": false
+}

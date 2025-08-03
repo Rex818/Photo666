@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-import structlog
+import logging
 
 try:
     from .exceptions import ConfigurationError
@@ -29,7 +29,7 @@ class PluginConfig:
         Args:
             config_path: 配置文件路径，如果为None则使用默认路径
         """
-        self.logger = structlog.get_logger("gps_location_plugin.config_manager")
+        self.logger = logging.getLogger("gps_location_plugin.config_manager")
         
         # 设置配置文件路径
         if config_path is None:
@@ -42,7 +42,7 @@ class PluginConfig:
         # 加载配置
         self._load_config()
         
-        self.logger.info("Plugin config initialized", path=str(self.config_path))
+        self.logger.info(f"Plugin config initialized - path: {str(self.config_path)}")
     
     def _load_config(self):
         """加载配置文件"""
@@ -317,7 +317,7 @@ class PluginConfig:
             with open(export_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, ensure_ascii=False, indent=2)
             
-            self.logger.info("Config exported", path=export_path)
+            self.logger.info(f"Config exported - path: {export_path}")
             return True
             
         except Exception as e:
@@ -358,7 +358,7 @@ class PluginConfig:
             self.config_data = imported_data
             self._save_config()
             
-            self.logger.info("Config imported successfully", path=import_path)
+            self.logger.info(f"Config imported successfully - path: {import_path}")
             return True
             
         except Exception as e:

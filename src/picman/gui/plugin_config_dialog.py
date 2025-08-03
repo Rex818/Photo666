@@ -60,12 +60,49 @@ class PluginConfigDialog(QDialog):
         
         # 源语言
         self.source_language = QComboBox()
-        self.source_language.addItems(["en", "ja", "ko", "fr", "de", "es", "ru"])
+        self.source_language.addItems([
+            "en", "zh-CN", "zh-TW", "ja", "ko", "fr", "de", "es", "ru", "auto"
+        ])
+        # 添加标签说明
+        source_labels = {
+            "en": "英语",
+            "zh-CN": "中文（简体）",
+            "zh-TW": "中文（繁体）",
+            "ja": "日语",
+            "ko": "韩语",
+            "fr": "法语",
+            "de": "德语",
+            "es": "西班牙语",
+            "ru": "俄语",
+            "auto": "自动检测"
+        }
+        for i in range(self.source_language.count()):
+            code = self.source_language.itemText(i)
+            label = source_labels.get(code, code)
+            self.source_language.setItemText(i, f"{code} - {label}")
         config_layout.addRow("源语言:", self.source_language)
         
         # 目标语言
         self.target_language = QComboBox()
-        self.target_language.addItems(["zh-CN", "zh-TW", "en", "ja", "ko"])
+        self.target_language.addItems([
+            "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru"
+        ])
+        # 添加标签说明
+        target_labels = {
+            "en": "英语",
+            "zh-CN": "中文（简体）",
+            "zh-TW": "中文（繁体）",
+            "ja": "日语",
+            "ko": "韩语",
+            "fr": "法语",
+            "de": "德语",
+            "es": "西班牙语",
+            "ru": "俄语"
+        }
+        for i in range(self.target_language.count()):
+            code = self.target_language.itemText(i)
+            label = target_labels.get(code, code)
+            self.target_language.setItemText(i, f"{code} - {label}")
         config_layout.addRow("目标语言:", self.target_language)
         
         layout.addWidget(config_group)
@@ -155,15 +192,19 @@ class PluginConfigDialog(QDialog):
             
             # 源语言
             source_lang = self.config.get("config", {}).get("source_language", "en")
-            index = self.source_language.findText(source_lang)
-            if index >= 0:
-                self.source_language.setCurrentIndex(index)
+            # 查找包含该语言代码的项
+            for i in range(self.source_language.count()):
+                if self.source_language.itemText(i).startswith(source_lang + " -"):
+                    self.source_language.setCurrentIndex(i)
+                    break
             
             # 目标语言
             target_lang = self.config.get("config", {}).get("target_language", "zh-CN")
-            index = self.target_language.findText(target_lang)
-            if index >= 0:
-                self.target_language.setCurrentIndex(index)
+            # 查找包含该语言代码的项
+            for i in range(self.target_language.count()):
+                if self.target_language.itemText(i).startswith(target_lang + " -"):
+                    self.target_language.setCurrentIndex(i)
+                    break
                 
         except Exception as e:
             self.logger.error("Failed to load config to UI", error=str(e))
@@ -173,8 +214,15 @@ class PluginConfigDialog(QDialog):
         try:
             # 更新配置
             self.config["enabled"] = self.enable_plugin.isChecked()
-            self.config["config"]["source_language"] = self.source_language.currentText()
-            self.config["config"]["target_language"] = self.target_language.currentText()
+            
+            # 提取语言代码（去掉标签说明）
+            source_text = self.source_language.currentText()
+            source_lang = source_text.split(" - ")[0] if " - " in source_text else source_text
+            self.config["config"]["source_language"] = source_lang
+            
+            target_text = self.target_language.currentText()
+            target_lang = target_text.split(" - ")[0] if " - " in target_text else target_text
+            self.config["config"]["target_language"] = target_lang
             
             # 保存到文件
             self.save_config_file(self.config)

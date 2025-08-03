@@ -22,13 +22,12 @@ class PhotoViewer(QWidget):
     previous_photo_requested = pyqtSignal()  # 请求上一张图片
     next_photo_requested = pyqtSignal()  # 请求下一张图片
     
-    def __init__(self, plugin_manager=None):
+    def __init__(self):
         super().__init__()
         self.current_photo = None
         self.current_pixmap = None
         self.original_pixmap = None
         self.logger = structlog.get_logger("picman.gui.photo_viewer")
-        self.plugin_manager = plugin_manager
         
         # Zoom and rotation settings
         self.zoom_factor = 1.0
@@ -228,7 +227,8 @@ class PhotoViewer(QWidget):
         """Create the photo information and controls panel."""
         panel = QFrame()
         panel.setFrameStyle(QFrame.Shape.StyledPanel)
-        # 不再限制最大高度，让QScrollArea自适应
+        panel.setMaximumHeight(300)  # 增加高度以容纳更多信息
+        
         layout = QHBoxLayout(panel)
         
         # 5区 - 基本信息 (左侧) - 调整宽度和行间距
@@ -269,12 +269,11 @@ class PhotoViewer(QWidget):
         layout.addWidget(basic_info_group)
         
         # 6区 - 补充信息 (中间) - 调整宽度和行间距
-        # 用滚动区域包裹补充信息分组
         detailed_info_group = QGroupBox("补充信息")
-        detailed_info_group.setMinimumWidth(320)
+        detailed_info_group.setFixedWidth(280)  # 固定宽度
         detailed_info_layout = QVBoxLayout(detailed_info_group)
-        detailed_info_layout.setSpacing(2)
-        detailed_info_layout.setContentsMargins(5, 5, 5, 5)
+        detailed_info_layout.setSpacing(2)  # 缩小行间距
+        detailed_info_layout.setContentsMargins(5, 5, 5, 5)  # 缩小边距
         
         # 相机信息
         self.camera_make_label = QLabel("相机品牌: -")
@@ -299,26 +298,21 @@ class PhotoViewer(QWidget):
         self.iso_label = QLabel("ISO: -")
         detailed_info_layout.addWidget(self.iso_label)
         
-        # 恢复并优化GPS信息显示
-        self.gps_latitude_label = QLabel("纬度: -")
+        # 地理位置信息
+        self.gps_latitude_label = QLabel("GPS纬度: -")
         detailed_info_layout.addWidget(self.gps_latitude_label)
-        self.gps_longitude_label = QLabel("经度: -")
+        
+        self.gps_longitude_label = QLabel("GPS经度: -")
         detailed_info_layout.addWidget(self.gps_longitude_label)
-        self.gps_altitude_label = QLabel("高度: -")
+        
+        self.gps_altitude_label = QLabel("GPS海拔: -")
         detailed_info_layout.addWidget(self.gps_altitude_label)
-        self.gps_label = QLabel("GPS坐标: -")
-        detailed_info_layout.addWidget(self.gps_label)
-        self.location_label = QLabel("地理位置: -")
+        
+        # 位置信息（由GPS插件提供）
+        self.location_label = QLabel("位置: -")
+        self.location_label.setWordWrap(True)
+        self.location_label.setStyleSheet("color: #0066cc; font-weight: bold;")
         detailed_info_layout.addWidget(self.location_label)
-        # 刷新地理位置按钮（上下排列）
-        self.refresh_location_btn = QPushButton("刷新当前图片地理位置")
-        self.refresh_location_btn.setToolTip("重新查询并刷新当前图片地理位置信息")
-        self.refresh_location_btn.clicked.connect(self.refresh_location)
-        detailed_info_layout.addWidget(self.refresh_location_btn)
-        self.refresh_all_location_btn = QPushButton("刷新全部图片地理位置")
-        self.refresh_all_location_btn.setToolTip("批量刷新所有图片的地理位置信息")
-        self.refresh_all_location_btn.clicked.connect(self.refresh_all_locations)
-        detailed_info_layout.addWidget(self.refresh_all_location_btn)
         
         # 其他EXIF信息
         self.flash_label = QLabel("闪光灯: -")
@@ -1040,9 +1034,7 @@ class PhotoViewer(QWidget):
         return f"{s} {size_names[i]}"
 
     def update_detailed_info_panel(self, photo_data: dict):
-        """
-        更新详细信息面板，包括地理位置显示。
-        """
+        """更新详细信息面板的EXIF数据"""
         try:
             exif_data = photo_data.get("exif_data", {})
             
@@ -1099,71 +1091,59 @@ class PhotoViewer(QWidget):
             self.iso_label.setText(f"ISO: {iso or '-'}")
             
             # GPS信息
-            # 优先直接用photo_data中的gps字段
-            lat = photo_data.get("gps_latitude")
-            lon = photo_data.get("gps_longitude")
-            alt = photo_data.get("gps_altitude")
-            # 如果没有，尝试从exif_data中解析
-            if (lat is None or lon is None) and photo_data.get("exif_data"):
-                exif_data = photo_data["exif_data"]
-                gps_info = exif_data.get("GPSInfo")
-                if gps_info:
-                    try:
-                        gps_lat = gps_info.get(2) or gps_info.get('GPSLatitude')
-                        gps_lat_ref = gps_info.get(1) or gps_info.get('GPSLatitudeRef')
-                        gps_lon = gps_info.get(4) or gps_info.get('GPSLongitude')
-                        gps_lon_ref = gps_info.get(3) or gps_info.get('GPSLongitudeRef')
-                        def _val(x):
-                            if isinstance(x, tuple) and len(x) == 2:
-                                return x[0] / x[1] if x[1] else 0
-                            try:
-                                return float(x)
-                            except Exception:
-                                return 0
-                        if gps_lat and gps_lat_ref and gps_lon and gps_lon_ref:
-                            d, m, s = gps_lat if isinstance(gps_lat, (list, tuple)) else (0, 0, 0)
-                            lat = _val(d) + _val(m) / 60 + _val(s) / 3600
-                            if gps_lat_ref in ['S', 'W']:
-                                lat = -lat
-                            d, m, s = gps_lon if isinstance(gps_lon, (list, tuple)) else (0, 0, 0)
-                            lon = _val(d) + _val(m) / 60 + _val(s) / 3600
-                            if gps_lon_ref in ['S', 'W']:
-                                lon = -lon
-                        gps_alt = gps_info.get(6) or gps_info.get('GPSAltitude')
-                        if gps_alt:
-                            if isinstance(gps_alt, tuple):
-                                alt = gps_alt[0] / gps_alt[1] if gps_alt[1] else 0
-                            else:
-                                alt = float(gps_alt)
-                    except Exception:
-                        pass
-            # 显示
-            if lat is not None:
-                self.gps_latitude_label.setText(f"纬度: {lat:.6f}")
+            gps_lat = exif_data.get('GPSLatitude')
+            gps_lon = exif_data.get('GPSLongitude')
+            gps_alt = exif_data.get('GPSAltitude')
+            
+            if gps_lat and gps_lon:
+                # 转换GPS坐标
+                lat = self._convert_gps_coordinate(gps_lat, exif_data.get('GPSLatitudeRef', 'N'))
+                lon = self._convert_gps_coordinate(gps_lon, exif_data.get('GPSLongitudeRef', 'E'))
+                self.gps_latitude_label.setText(f"GPS纬度: {lat}")
+                self.gps_longitude_label.setText(f"GPS经度: {lon}")
             else:
-                self.gps_latitude_label.setText("纬度: -")
-            if lon is not None:
-                self.gps_longitude_label.setText(f"经度: {lon:.6f}")
-            else:
-                self.gps_longitude_label.setText("经度: -")
-            if alt is not None:
+                self.gps_latitude_label.setText("GPS纬度: -")
+                self.gps_longitude_label.setText("GPS经度: -")
+            
+            if gps_alt:
                 try:
-                    self.gps_altitude_label.setText(f"高度: {float(alt):.2f}")
-                except Exception:
-                    self.gps_altitude_label.setText(f"高度: {alt}")
+                    if isinstance(gps_alt, str) and '/' in gps_alt:
+                        num, den = map(float, gps_alt.split('/'))
+                        altitude = f"{num/den:.1f}米"
+                    else:
+                        altitude = f"{gps_alt}米"
+                    self.gps_altitude_label.setText(f"GPS海拔: {altitude}")
+                except:
+                    self.gps_altitude_label.setText("GPS海拔: -")
             else:
-                self.gps_altitude_label.setText("高度: -")
-            if lat is not None and lon is not None:
-                self.gps_label.setText(f"GPS坐标: {lat:.6f}, {lon:.6f}")
-                # 优先用数据库缓存
-                location_text = photo_data.get("location_text")
-                if location_text:
-                    self.location_label.setText(f"地理位置: {location_text}")
-                else:
-                    self.location_label.setText("地理位置: 查询中...")
+                self.gps_altitude_label.setText("GPS海拔: -")
+            
+            # 查询位置信息（如果GPS插件可用）
+            self._query_location_info(photo_data)
+            
+            # 其他EXIF信息
+            flash = exif_data.get('Flash')
+            if flash is not None:
+                flash_text = "开启" if flash else "关闭"
+                self.flash_label.setText(f"闪光灯: {flash_text}")
             else:
-                self.gps_label.setText("GPS坐标: -")
-                self.location_label.setText("地理位置: 无GPS信息")
+                self.flash_label.setText("闪光灯: -")
+            
+            white_balance = exif_data.get('WhiteBalance')
+            if white_balance is not None:
+                wb_map = {0: "自动", 1: "手动"}
+                wb_text = wb_map.get(white_balance, str(white_balance))
+                self.white_balance_label.setText(f"白平衡: {wb_text}")
+            else:
+                self.white_balance_label.setText("白平衡: -")
+            
+            exposure_mode = exif_data.get('ExposureMode')
+            if exposure_mode is not None:
+                mode_map = {0: "自动曝光", 1: "手动曝光", 2: "自动包围曝光"}
+                mode_text = mode_map.get(exposure_mode, str(exposure_mode))
+                self.exposure_mode_label.setText(f"曝光模式: {mode_text}")
+            else:
+                self.exposure_mode_label.setText("曝光模式: -")
                 
         except Exception as e:
             self.logger.error("Failed to update detailed info panel", error=str(e))
@@ -1587,134 +1567,3 @@ class PhotoViewer(QWidget):
                             path=file_path, error=str(e))
             # 如果处理失败，回退到原始加载方式
             return QPixmap(file_path)
-
-    def refresh_location(self):
-        """刷新当前照片的地理位置信息，并写入数据库缓存。"""
-        if not self.current_photo:
-            return
-        lat = self.current_photo.get("gps_latitude")
-        lon = self.current_photo.get("gps_longitude")
-        alt = self.current_photo.get("gps_altitude")
-        if lat is not None and lon is not None and self.plugin_manager:
-            gps_plugin = self.plugin_manager.get_plugin("GPS位置查询插件")
-            if gps_plugin and hasattr(gps_plugin, "query_location"):
-                from PyQt6.QtCore import QThread, pyqtSignal
-                class LocationWorker(QThread):
-                    location_ready = pyqtSignal(object)
-                    def __init__(self, plugin, lat, lon, alt):
-                        super().__init__()
-                        self.plugin = plugin
-                        self.lat = lat
-                        self.lon = lon
-                        self.alt = alt
-                    def run(self):
-                        from types import SimpleNamespace
-                        try:
-                            coord = SimpleNamespace(latitude=self.lat, longitude=self.lon, altitude=self.alt)
-                            location = self.plugin.query_location(coord)
-                            self.location_ready.emit(location)
-                        except Exception as e:
-                            self.location_ready.emit(None)
-                def on_location_ready(location):
-                    if location and hasattr(location, 'full_address') and location.full_address:
-                        self.location_label.setText(f"地理位置: {location.full_address}")
-                        # 写入数据库缓存
-                        main_win = self.parentWidget()
-                        while main_win and not hasattr(main_win, 'photo_manager'):
-                            main_win = main_win.parentWidget() if hasattr(main_win, 'parentWidget') else None
-                        if main_win and hasattr(main_win, 'photo_manager') and self.current_photo.get('id'):
-                            main_win.photo_manager.db.update_photo(self.current_photo['id'], {"location_text": location.full_address})
-                            self.current_photo["location_text"] = location.full_address
-                    elif location:
-                        # 拼接简要地理位置
-                        parts = []
-                        for k in ["country", "state_province", "city", "district", "street"]:
-                            v = getattr(location, k, None)
-                            if v:
-                                parts.append(str(v))
-                        if parts:
-                            loc_str = "_".join(parts)
-                            self.location_label.setText(f"地理位置: {loc_str}")
-                            main_win = self.parentWidget()
-                            while main_win and not hasattr(main_win, 'photo_manager'):
-                                main_win = main_win.parentWidget() if hasattr(main_win, 'parentWidget') else None
-                            if main_win and hasattr(main_win, 'photo_manager') and self.current_photo.get('id'):
-                                main_win.photo_manager.db.update_photo(self.current_photo['id'], {"location_text": loc_str})
-                                self.current_photo["location_text"] = loc_str
-                        else:
-                            self.location_label.setText("地理位置: 查询失败")
-                    else:
-                        self.location_label.setText("地理位置: 查询失败")
-                self.location_label.setText("地理位置: 查询中...")
-                worker = LocationWorker(gps_plugin, lat, lon, alt)
-                self._location_worker = worker  # 保存引用，防止被回收
-                worker.location_ready.connect(on_location_ready)
-                worker.finished.connect(lambda: setattr(self, "_location_worker", None))  # 线程结束后释放
-                worker.start()
-        else:
-            self.location_label.setText("地理位置: 无GPS信息")
-
-    def refresh_all_locations(self):
-        """批量刷新所有图片的地理位置信息。"""
-        from PyQt6.QtWidgets import QMessageBox, QProgressDialog
-        from PyQt6.QtCore import QCoreApplication
-        # 获取photo_manager实例
-        main_win = self.parentWidget()
-        while main_win and not hasattr(main_win, 'photo_manager'):
-            main_win = main_win.parentWidget() if hasattr(main_win, 'parentWidget') else None
-        if not main_win or not hasattr(main_win, 'photo_manager'):
-            QMessageBox.warning(self, "错误", "无法获取PhotoManager实例，无法批量刷新！")
-            return
-        photo_manager = main_win.photo_manager
-        # 获取所有图片
-        all_photos = photo_manager.db.search_photos(limit=100000)
-        photos_to_update = [p for p in all_photos if p.get("gps_latitude") and not p.get("location_text")]
-        if not photos_to_update:
-            QMessageBox.information(self, "批量刷新地理位置", "没有需要刷新的图片（所有图片都已缓存地理位置）")
-            return
-        progress = QProgressDialog("正在批量刷新地理位置信息...", "取消", 0, len(photos_to_update), self)
-        progress.setWindowTitle("批量刷新地理位置")
-        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        updated = 0
-        for idx, photo in enumerate(photos_to_update, 1):
-            if progress.wasCanceled():
-                break
-            lat = photo.get("gps_latitude")
-            lon = photo.get("gps_longitude")
-            if lat is not None and lon is not None:
-                # 查询地理位置（用插件）
-                location_text = self._query_location_text(photo_manager, lat, lon)
-                if location_text:
-                    photo_manager.db.update_photo(photo["id"], {"location_text": location_text})
-                    updated += 1
-            progress.setValue(idx)
-            QCoreApplication.processEvents()
-        progress.close()
-        QMessageBox.information(self, "批量刷新完成", f"已成功刷新 {updated} 张图片的地理位置信息。")
-
-    def _query_location_text(self, photo_manager, lat, lon):
-        """调用GPS插件查询地理位置文本，返回如'北京市_朝阳区'"""
-        plugin = None
-        if hasattr(photo_manager, 'plugin_manager'):
-            plugin = photo_manager.plugin_manager.get_plugin("GPS位置查询插件")
-        if not plugin or not hasattr(plugin, "query_location"):
-            return None
-        from types import SimpleNamespace
-        coord = SimpleNamespace(latitude=lat, longitude=lon, altitude=None)
-        try:
-            location = plugin.query_location(coord)
-            # 优先用详细地址或城市、区县
-            if location:
-                # 兼容多种插件返回结构
-                if hasattr(location, 'full_address') and location.full_address:
-                    return location.full_address
-                parts = []
-                for k in ["country", "state_province", "city", "district", "street"]:
-                    v = getattr(location, k, None)
-                    if v:
-                        parts.append(str(v))
-                if parts:
-                    return "_".join(parts)
-            return None
-        except Exception:
-            return None

@@ -6,6 +6,24 @@
     "enabled": true,
     "config": {
         "source_language": "en",
-        "target_language": "zh-CN"
+        "target_language": "zh-CN",
+        "max_retries": 1,
+        "base_delay": 0.2,
+        "max_delay": 1.0,
+        "request_interval": 0.3
+    },
+    "config_examples": {
+        "英文到中文": {
+            "source_language": "en",
+            "target_language": "zh-CN"
+        },
+        "中文到英文": {
+            "source_language": "zh-CN",
+            "target_language": "en"
+        },
+        "自动检测到中文": {
+            "source_language": "auto",
+            "target_language": "zh-CN"
+        }
     }
 }

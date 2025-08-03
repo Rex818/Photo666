@@ -1,0 +1,238 @@
+{
+  "version": "2.0.0",
+  "models": {
+    "fancyfeast/llama-joycaption-beta-one-hf-llava": {
+      "name": "JoyCaption Beta One",
+      "description": "JoyCaption Beta One模型，平衡性能和精度",
+      "size": "3.8GB",
+      "recommended": true,
+      "type": "llava",
+      "file_structure": {
+        "config.json": "模型配置文件，包含模型架构和参数设置",
+        "pytorch_model.bin": "主要的模型权重文件，包含所有神经网络参数",
+        "tokenizer.json": "分词器配置文件，定义文本处理规则",
+        "tokenizer_config.json": "分词器配置元数据",
+        "special_tokens_map.json": "特殊标记映射文件",
+        "generation_config.json": "文本生成配置文件",
+        "preprocessor_config.json": "预处理器配置文件",
+        "model.safetensors": "安全的模型权重文件（如果存在）"
+      },
+      "local_search_paths": [
+        "./models/llama-joycaption-beta-one-hf-llava",
+        "../models/llama-joycaption-beta-one-hf-llava",
+        "C:/AI_Models/llama-joycaption-beta-one-hf-llava",
+        "D:/AI_Models/llama-joycaption-beta-one-hf-llava"
+      ]
+    },
+    "fancyfeast/llama-joycaption-alpha-two-hf-llava": {
+      "name": "JoyCaption Alpha Two",
+      "description": "JoyCaption Alpha Two模型，早期版本，兼容性好",
+      "size": "3.8GB",
+      "recommended": false,
+      "type": "llava",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "pytorch_model.bin": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "special_tokens_map.json": "特殊标记映射",
+        "generation_config.json": "生成配置",
+        "preprocessor_config.json": "预处理器配置"
+      },
+      "local_search_paths": [
+        "./models/llama-joycaption-alpha-two-hf-llava",
+        "../models/llama-joycaption-alpha-two-hf-llava",
+        "C:/AI_Models/llama-joycaption-alpha-two-hf-llava",
+        "D:/AI_Models/llama-joycaption-alpha-two-hf-llava"
+      ]
+    },
+    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": {
+      "name": "Llama 3.1 8B Instruct (4-bit)",
+      "description": "Meta Llama 3.1 8B指令调优模型，4位量化版本",
+      "size": "2.5GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+        "../models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+        "C:/AI_Models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+        "D:/AI_Models/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
+      ]
+    },
+    "unsloth/Meta-Llama-3.1-8B-Instruct": {
+      "name": "Llama 3.1 8B Instruct",
+      "description": "Meta Llama 3.1 8B指令调优模型，全精度版本",
+      "size": "8GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Meta-Llama-3.1-8B-Instruct",
+        "../models/Meta-Llama-3.1-8B-Instruct",
+        "C:/AI_Models/Meta-Llama-3.1-8B-Instruct",
+        "D:/AI_Models/Meta-Llama-3.1-8B-Instruct"
+      ]
+    },
+    "John6666/Llama-3.1-8B-Lexi-Uncensored-V2-nf4": {
+      "name": "Llama 3.1 8B Lexi Uncensored V2 (nf4)",
+      "description": "Llama 3.1 8B Lexi无审查版本，nf4量化",
+      "size": "2.5GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
+        "../models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
+        "C:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
+        "D:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4"
+      ]
+    },
+    "Orenguteng/Llama-3.1-8B-Lexi-Uncensored-V2": {
+      "name": "Llama 3.1 8B Lexi Uncensored V2",
+      "description": "Llama 3.1 8B Lexi无审查版本，全精度",
+      "size": "8GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Llama-3.1-8B-Lexi-Uncensored-V2",
+        "../models/Llama-3.1-8B-Lexi-Uncensored-V2",
+        "C:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2",
+        "D:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2"
+      ]
+    },
+    "meta-llama/Llama-2-7b-chat-hf": {
+      "name": "Llama-2 7B Chat",
+      "description": "Meta Llama-2 7B聊天模型",
+      "size": "14GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Llama-2-7b-chat-hf",
+        "../models/Llama-2-7b-chat-hf",
+        "C:/AI_Models/Llama-2-7b-chat-hf",
+        "D:/AI_Models/Llama-2-7b-chat-hf"
+      ]
+    },
+    "meta-llama/Llama-2-13b-chat-hf": {
+      "name": "Llama-2 13B Chat",
+      "description": "Meta Llama-2 13B聊天模型",
+      "size": "26GB",
+      "recommended": false,
+      "type": "llama",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/Llama-2-13b-chat-hf",
+        "../models/Llama-2-13b-chat-hf",
+        "C:/AI_Models/Llama-2-13b-chat-hf",
+        "D:/AI_Models/Llama-2-13b-chat-hf"
+      ]
+    },
+    "google/gemma-2b-it": {
+      "name": "Gemma 2B IT",
+      "description": "Google Gemma 2B指令调优模型",
+      "size": "4GB",
+      "recommended": false,
+      "type": "gemma",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/gemma-2b-it",
+        "../models/gemma-2b-it",
+        "C:/AI_Models/gemma-2b-it",
+        "D:/AI_Models/gemma-2b-it"
+      ]
+    },
+    "google/gemma-7b-it": {
+      "name": "Gemma 7B IT",
+      "description": "Google Gemma 7B指令调优模型",
+      "size": "14GB",
+      "recommended": false,
+      "type": "gemma",
+      "file_structure": {
+        "config.json": "模型配置文件",
+        "model.safetensors": "模型权重文件",
+        "tokenizer.json": "分词器配置",
+        "tokenizer_config.json": "分词器元数据",
+        "generation_config.json": "生成配置"
+      },
+      "local_search_paths": [
+        "./models/gemma-7b-it",
+        "../models/gemma-7b-it",
+        "C:/AI_Models/gemma-7b-it",
+        "D:/AI_Models/gemma-7b-it"
+      ]
+    }
+  },
+  "default_model": "fancyfeast/llama-joycaption-beta-one-hf-llava",
+  "memory_efficient_configs": {
+    "Balanced (8-bit)": {
+      "description": "推荐预设，8位量化，平衡性能和内存使用",
+      "load_in_8bit": true,
+      "bnb_8bit_compute_dtype": "float16",
+      "bnb_8bit_use_double_quant": true
+    },
+    "Full Precision (fp32)": {
+      "description": "全精度模式，使用fp32，最高质量但需要最多显存",
+      "torch_dtype": "float32"
+    },
+    "Full Precision (bf16)": {
+      "description": "全精度模式，使用bfloat16，高精度但需要更多显存",
+      "torch_dtype": "bfloat16"
+    },
+    "Full Precision (fp16)": {
+      "description": "全精度模式，使用fp16，平衡精度和显存",
+      "torch_dtype": "float16"
+    },
+    "Maximum Savings (4-bit)": {
+      "description": "4位量化，最大内存节省，最低显存使用",
+      "load_in_4bit": true,
+      "bnb_4bit_compute_dtype": "float16",
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_use_double_quant": true
+    }
+  }
+} 

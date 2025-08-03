@@ -1,4 +1,4 @@
-﻿# PyPhotoManager Dependencies
+﻿# Photo666 Dependencies
 # Core GUI Framework
 PyQt6>=6.5.0
 

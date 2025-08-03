@@ -27,7 +27,9 @@ plugins:
   auto_load: true
   enabled_plugins:
   - Google翻译插件
+  - Florence2图片反推信息插件
   - GPS位置查询插件
+  - JoyCaption图片反推信息插件
   plugin_directory: plugins
   sandbox_enabled: true
 thumbnail:
@@ -40,12 +42,34 @@ thumbnail:
   - 256
 ui:
   auto_save_layout: true
+  layout:
+    panels_floating:
+      albums: false
+      photo_display: false
+      search: false
+      tags: false
+    panels_geometry:
+      albums: null
+      photo_display: null
+      search: null
+      tags: null
+    panels_visible:
+      albums: true
+      photo_display: true
+      search: true
+      tags: true
+    window_geometry:
+      height: 1169
+      width: 2217
+      x: 9
+      y: 31
+    window_state: 000000ff00000000fd0000000100000002000008a900000402fc0100000004fb000000160061006c00620075006d0073005f0064006f0063006b0100000000000001b3000001b300fffffffb00000016007300650061007200630068005f0064006f0063006b01000001b70000018d0000018d00fffffffb0000002400700068006f0074006f005f0064006900730070006c00610079005f0064006f0063006b0100000348000003190000031900fffffffb000000120074006100670073005f0064006f0063006b010000066500000244000000c800ffffff000008a90000003d00000004000000040000000800000008fc00000001000000020000000100000018006d00610069006e005f0074006f006f006c0062006100720100000000ffffffff0000000000000000
   show_image_info: true
   theme: default
   thumbnail_grid_columns: 6
   window_position:
-  - -181
-  - 89
+  - 9
+  - 0
   window_size:
-  - 2234
-  - 1187
+  - 2217
+  - 1169

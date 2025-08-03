@@ -8,7 +8,7 @@ import os
 import json
 from typing import Optional, Dict, Any, Union, List, Tuple
 from pathlib import Path
-import structlog
+import logging
 
 try:
     from PIL import Image
@@ -33,7 +33,7 @@ class GPSExtractor:
     """
     
     def __init__(self):
-        self.logger = structlog.get_logger("gps_location_plugin.gps_extractor")
+        self.logger = logging.getLogger("gps_location_plugin.gps_extractor")
         
         if not PIL_AVAILABLE:
             self.logger.warning("PIL/Pillow not available, GPS extraction may be limited")

@@ -1,0 +1,50 @@
+{
+    "microsoft/Florence-2-base": {
+        "name": "Florence-2 Base",
+        "description": "Microsoft Florence-2 基础模型",
+        "size": "1.2GB",
+        "tasks": ["caption", "detailed_caption", "prompt_gen_tags"],
+        "recommended": true,
+        "download_url": "https://huggingface.co/microsoft/Florence-2-base"
+    },
+    "microsoft/Florence-2-base-ft": {
+        "name": "Florence-2 Base (Fine-tuned)",
+        "description": "Microsoft Florence-2 基础模型（微调版）",
+        "size": "1.2GB",
+        "tasks": ["caption", "detailed_caption", "prompt_gen_tags"],
+        "recommended": false,
+        "download_url": "https://huggingface.co/microsoft/Florence-2-base-ft"
+    },
+    "microsoft/Florence-2-large": {
+        "name": "Florence-2 Large",
+        "description": "Microsoft Florence-2 大型模型",
+        "size": "3.8GB",
+        "tasks": ["caption", "detailed_caption", "prompt_gen_tags"],
+        "recommended": false,
+        "download_url": "https://huggingface.co/microsoft/Florence-2-large"
+    },
+    "microsoft/Florence-2-large-ft": {
+        "name": "Florence-2 Large (Fine-tuned)",
+        "description": "Microsoft Florence-2 大型模型（微调版）",
+        "size": "3.8GB",
+        "tasks": ["caption", "detailed_caption", "prompt_gen_tags"],
+        "recommended": false,
+        "download_url": "https://huggingface.co/microsoft/Florence-2-large-ft"
+    },
+    "MiaoshouAI/Florence-2-base-PromptGen-v1.5": {
+        "name": "Florence-2 PromptGen v1.5",
+        "description": "优化的提示词生成模型",
+        "size": "1.2GB",
+        "tasks": ["prompt_gen_tags", "caption"],
+        "recommended": false,
+        "download_url": "https://huggingface.co/MiaoshouAI/Florence-2-base-PromptGen-v1.5"
+    },
+    "MiaoshouAI/Florence-2-large-PromptGen-v1.5": {
+        "name": "Florence-2 Large PromptGen v1.5",
+        "description": "大型优化提示词生成模型",
+        "size": "3.8GB",
+        "tasks": ["prompt_gen_tags", "caption"],
+        "recommended": false,
+        "download_url": "https://huggingface.co/MiaoshouAI/Florence-2-large-PromptGen-v1.5"
+    }
+} 

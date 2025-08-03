@@ -11,11 +11,15 @@ from datetime import datetime, date
 import structlog
 from PIL import Image, ExifTags
 from PIL.ExifTags import TAGS
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+import time
 
 from ..database.manager import DatabaseManager
 from ..config.manager import ConfigManager
 from .thumbnail_generator import ThumbnailGenerator
 from .directory_scanner import DirectoryScanner
+from .ai_metadata_extractor import AIMetadataExtractor
 
 
 class PhotoManager:
@@ -26,7 +30,9 @@ class PhotoManager:
         self.db = db_manager
         self.thumbnail_gen = ThumbnailGenerator(config_manager)
         self.directory_scanner = DirectoryScanner(config_manager)
+        self.ai_extractor = AIMetadataExtractor()
         self.logger = structlog.get_logger("picman.core.photo_manager")
+        self._import_lock = Lock()  # 用于线程安全的导入操作
         
     def import_photo(self, file_path: str) -> Optional[int]:
         """Import a single photo into the database."""
@@ -46,19 +52,51 @@ class PhotoManager:
             file_hash = self._calculate_file_hash(file_path)
             existing_photo = self._find_by_hash(file_hash)
             
-            # 强制重新提取GPS信息并更新数据库
-            metadata = self._extract_metadata(file_path)
-            self.logger.info("导入时EXIF GPS调试", lat=metadata.get("gps_latitude"), lon=metadata.get("gps_longitude"), alt=metadata.get("gps_altitude"), raw=metadata.get("gps_raw"), file=str(file_path))
             if existing_photo:
-                update_data = {
-                    "gps_latitude": metadata.get("gps_latitude"),
-                    "gps_longitude": metadata.get("gps_longitude"),
-                    "gps_altitude": metadata.get("gps_altitude"),
-                    "exif_data": metadata.get("exif_data", {})
-                }
-                self.db.update_photo(existing_photo["id"], update_data)
-                self.logger.info("已存在照片强制更新GPS", photo_id=existing_photo["id"], update_data=update_data)
+                # 检查文件路径是否发生变化
+                current_filepath = str(file_path.absolute())
+                stored_filepath = existing_photo["filepath"]
+                
+                if current_filepath != stored_filepath:
+                    # 文件路径发生变化，更新数据库中的路径
+                    self.logger.info("Photo file moved, updating path", 
+                                   old_path=stored_filepath,
+                                   new_path=current_filepath,
+                                   photo_id=existing_photo["id"])
+                    
+                    # 更新文件路径和文件大小
+                    update_data = {
+                        "filepath": current_filepath,
+                        "file_size": file_path.stat().st_size,
+                        "date_modified": datetime.now().isoformat()
+                    }
+                    
+                    # 如果缩略图不存在，重新生成
+                    if not existing_photo.get("thumbnail_path") or not Path(existing_photo["thumbnail_path"]).exists():
+                        if self.config.get("thumbnail.generate_on_import", True):
+                            thumbnail_path = self.thumbnail_gen.generate_thumbnail(file_path)
+                            if thumbnail_path:
+                                update_data["thumbnail_path"] = thumbnail_path
+                                self.logger.info("Regenerated thumbnail for moved file", 
+                                               photo_id=existing_photo["id"])
+                    
+                    # 更新数据库
+                    if self.db.update_photo(existing_photo["id"], update_data):
+                        self.logger.info("Successfully updated photo path", 
+                                       photo_id=existing_photo["id"])
+                    else:
+                        self.logger.error("Failed to update photo path", 
+                                        photo_id=existing_photo["id"])
+                else:
+                    self.logger.info("Photo already exists at same location", path=str(file_path))
+                
                 return existing_photo["id"]
+            
+            # Extract image metadata
+            metadata = self._extract_metadata(file_path)
+            
+            # Extract AI metadata
+            ai_metadata = self.ai_extractor.extract_metadata(str(file_path))
             
             # Generate thumbnail
             thumbnail_path = None
@@ -76,16 +114,14 @@ class PhotoManager:
                 "format": metadata.get("format", ""),
                 "date_taken": metadata.get("date_taken", ""),
                 "exif_data": metadata.get("exif_data", {}),
+                "ai_metadata": ai_metadata.to_dict(),
+                "is_ai_generated": ai_metadata.is_ai_generated,
                 "thumbnail_path": thumbnail_path or "",
                 "rating": 0,
                 "is_favorite": False,
                 "tags": [],
-                "notes": "",
-                "gps_latitude": metadata.get("gps_latitude"),
-                "gps_longitude": metadata.get("gps_longitude"),
-                "gps_altitude": metadata.get("gps_altitude")
+                "notes": ""
             }
-            self.logger.info("新照片写入GPS", photo_data=photo_data)
             
             # Add to database
             photo_id = self.db.add_photo(photo_data)
@@ -111,27 +147,52 @@ class PhotoManager:
                 self.logger.error("Directory not found", path=str(directory))
                 return {"success": False, "error": "Directory not found"}
             
+            # 获取所有图片文件
+            image_files = list(self.directory_scanner.scan_directory(directory_path, recursive))
+            total_files = len(image_files)
+            
+            if total_files == 0:
+                self.logger.warning("No image files found in directory", path=str(directory))
+                return {"success": True, "imported": 0, "skipped": 0, "errors": 0, "total_processed": 0}
+            
+            self.logger.info("Starting directory import", 
+                           path=str(directory), 
+                           total_files=total_files,
+                           import_tags=tag_settings.get("import_tags", False) if tag_settings else False)
+            
             imported_count = 0
             skipped_count = 0
             error_count = 0
             imported_photo_ids = []
             
-            # Use directory scanner to find image files
-            for file_path in self.directory_scanner.scan_directory(directory_path, recursive):
-                if tag_settings and tag_settings.get("import_tags", False):
-                    # 使用带标签的导入方法
-                    result = self.import_photo_with_tags(str(file_path), tag_settings)
-                else:
-                    # 使用普通导入方法
-                    result = self.import_photo(str(file_path))
-                
-                if result:
-                    imported_count += 1
-                    imported_photo_ids.append(result)
-                elif result is None:
+            # 处理每个图片文件
+            for i, file_path in enumerate(image_files):
+                try:
+                    if tag_settings and tag_settings.get("import_tags", False):
+                        # 使用带标签的导入方法
+                        result = self.import_photo_with_tags(str(file_path), tag_settings)
+                    else:
+                        # 使用普通导入方法
+                        result = self.import_photo(str(file_path))
+                    
+                    if result:
+                        imported_count += 1
+                        imported_photo_ids.append(result)
+                        self.logger.debug("Photo imported successfully", 
+                                        file=str(file_path), 
+                                        photo_id=result)
+                    elif result is None:
+                        error_count += 1
+                        self.logger.warning("Failed to import photo", file=str(file_path))
+                    else:
+                        skipped_count += 1
+                        self.logger.debug("Photo skipped (already exists)", file=str(file_path))
+                        
+                except Exception as e:
                     error_count += 1
-                else:
-                    skipped_count += 1
+                    self.logger.error("Error importing photo", 
+                                    file=str(file_path), 
+                                    error=str(e))
             
             # Associate imported photos with album if album_id is provided
             if album_id and imported_photo_ids:
@@ -146,7 +207,7 @@ class PhotoManager:
                 "imported": imported_count,
                 "skipped": skipped_count,
                 "errors": error_count,
-                "total_processed": imported_count + skipped_count + error_count
+                "total_processed": total_files
             }
             
             self.logger.info("Directory import completed", **result)
@@ -353,23 +414,24 @@ class PhotoManager:
             "height": 0,
             "format": "",
             "date_taken": "",
-            "exif_data": {},
-            "gps_latitude": None,
-            "gps_longitude": None,
-            "gps_altitude": None,
-            "gps_raw": None  # 新增，便于调试
+            "exif_data": {}
         }
+        
         try:
             with Image.open(file_path) as img:
                 metadata["width"] = img.width
                 metadata["height"] = img.height
                 metadata["format"] = img.format or ""
+                
                 # Extract EXIF data
                 if hasattr(img, '_getexif') and img._getexif():
                     exif_dict = {}
                     exif = img._getexif()
+                    
                     for tag_id, value in exif.items():
                         tag = TAGS.get(tag_id, tag_id)
+                        
+                        # Convert non-serializable types for JSON serialization
                         if isinstance(value, bytes):
                             try:
                                 value = value.decode('utf-8')
@@ -379,76 +441,26 @@ class PhotoManager:
                             value = value.isoformat()
                         elif not isinstance(value, (str, int, float, bool, list, dict, type(None))):
                             value = str(value)
+                        
                         exif_dict[tag] = value
+                    
                     metadata["exif_data"] = exif_dict
+                    
                     # Extract date taken
                     date_taken = exif_dict.get("DateTime") or exif_dict.get("DateTimeOriginal")
                     if date_taken:
                         try:
+                            # Convert to ISO format
                             dt = datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S")
                             metadata["date_taken"] = dt.isoformat()
                         except ValueError:
                             pass
-                    # 提取GPS信息（增强兼容性）
-                    gps_info = exif_dict.get("GPSInfo")
-                    metadata["gps_raw"] = str(gps_info)  # 记录原始内容
-                    if gps_info:
-                        def _convert_gps(coord, ref):
-                            try:
-                                # 支持多种格式
-                                if isinstance(coord, (list, tuple)) and len(coord) == 3:
-                                    def _val(x):
-                                        if isinstance(x, tuple) and len(x) == 2:
-                                            return x[0] / x[1] if x[1] else 0
-                                        try:
-                                            return float(x)
-                                        except Exception:
-                                            return 0
-                                    d = _val(coord[0])
-                                    m = _val(coord[1])
-                                    s = _val(coord[2])
-                                elif isinstance(coord, str):
-                                    # 兼容字符串格式 "44; 7; 32.82..."
-                                    parts = [float(x.strip()) for x in coord.replace(';', ',').split(',') if x.strip()]
-                                    d, m, s = (parts + [0, 0, 0])[:3]
-                                else:
-                                    return None
-                                value = d + m / 60 + s / 3600
-                                if ref in ['S', 'W']:
-                                    value = -value
-                                return value
-                            except Exception as e:
-                                self.logger.warning("GPS坐标转换失败", error=str(e), coord=str(coord), ref=ref)
-                                return None
-                        try:
-                            gps_lat = gps_info.get(2) or gps_info.get('GPSLatitude')
-                            gps_lat_ref = gps_info.get(1) or gps_info.get('GPSLatitudeRef')
-                            gps_lon = gps_info.get(4) or gps_info.get('GPSLongitude')
-                            gps_lon_ref = gps_info.get(3) or gps_info.get('GPSLongitudeRef')
-                            gps_alt = gps_info.get(6) or gps_info.get('GPSAltitude')
-                            self.logger.info("原始GPS字段", lat=gps_lat, lat_ref=gps_lat_ref, lon=gps_lon, lon_ref=gps_lon_ref, alt=gps_alt, file=str(file_path))
-                            if gps_lat and gps_lat_ref and gps_lon and gps_lon_ref:
-                                lat = _convert_gps(gps_lat, gps_lat_ref)
-                                lon = _convert_gps(gps_lon, gps_lon_ref)
-                                metadata["gps_latitude"] = lat
-                                metadata["gps_longitude"] = lon
-                                self.logger.info("EXIF GPS提取", lat=lat, lon=lon, file=str(file_path))
-                            else:
-                                self.logger.info("未找到完整GPS字段", gps_info=str(gps_info), file=str(file_path))
-                            if gps_alt:
-                                try:
-                                    if isinstance(gps_alt, tuple):
-                                        alt = gps_alt[0] / gps_alt[1] if gps_alt[1] else 0
-                                    else:
-                                        alt = float(gps_alt)
-                                    metadata["gps_altitude"] = alt
-                                    self.logger.info("EXIF 高度提取", alt=alt, file=str(file_path))
-                                except Exception as e:
-                                    self.logger.warning("GPS高度转换失败", error=str(e), gps_alt=str(gps_alt))
-                        except Exception as e:
-                            self.logger.warning("GPS信息解析失败", error=str(e), gps_info=str(gps_info))
+                
         except Exception as e:
-            self.logger.warning("Failed to extract metadata", path=str(file_path), error=str(e))
+            self.logger.warning("Failed to extract metadata", 
+                              path=str(file_path), 
+                              error=str(e))
+        
         return metadata
     
     def find_original_image_by_hash(self, file_hash: str) -> Optional[str]:
@@ -733,7 +745,15 @@ class PhotoManager:
             }
             
             # 根据标签类型分配标签
-            if tag_type == "simple":
+            if tag_type == "auto":
+                # 自动检测标签类型
+                detected_type = self._detect_tag_type_from_content(tags)
+                tag_data[detected_type] = tags
+                self.logger.info("Auto-detected tag type", 
+                               photo_id=photo_id,
+                               detected_type=detected_type,
+                               tag_count=len(tags))
+            elif tag_type == "simple":
                 tag_data["simple_tags"] = tags
             elif tag_type == "detailed":
                 tag_data["detailed_tags"] = tags
@@ -752,6 +772,30 @@ class PhotoManager:
             self.logger.error("Failed to import tags for photo", 
                             photo_id=photo_id,
                             error=str(e))
+    
+    def _detect_tag_type_from_content(self, tags: List[str]) -> str:
+        """根据标签内容自动检测标签类型"""
+        try:
+            # 合并所有标签内容
+            combined_content = ' '.join(tags)
+            content_length = len(combined_content)
+            word_count = len(combined_content.split())
+            
+            # 简单标签：通常较短，包含关键词或短语
+            if content_length < 100 and word_count <= 10:
+                return "simple_tags"
+            
+            # 详细标签：通常较长，包含详细描述
+            elif content_length > 300 or word_count > 20:
+                return "detailed_tags"
+            
+            # 普通标签：中等长度
+            else:
+                return "normal_tags"
+                
+        except Exception as e:
+            self.logger.error("Failed to detect tag type", error=str(e))
+            return "normal_tags"
     
     def _find_tag_file(self, photo_path: Path) -> Optional[Path]:
         """Find the corresponding tag file for a photo.
@@ -788,11 +832,33 @@ class PhotoManager:
             List of tags
         """
         try:
-            tags = []
             with open(tag_file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):  # 忽略空行和注释
+                content = f.read().strip()
+            
+            if not content:
+                return []
+            
+            # 处理Florence2反推生成的纯文本文件
+            # 这些文件通常包含完整的描述文本，而不是传统的标签列表
+            # 我们需要将文本转换为适合标签系统的格式
+            
+            # 如果是Florence2反推结果，直接返回整个内容作为一个标签
+            # 这样可以保持描述的完整性
+            if len(content) > 50:  # 长文本，可能是Florence2反推结果
+                return [content]
+            
+            # 如果是传统的标签文件，按行分割
+            tags = []
+            for line in content.split('\n'):
+                line = line.strip()
+                if line and not line.startswith('#'):  # 忽略空行和注释
+                    # 处理逗号分隔的标签
+                    if ',' in line:
+                        for tag in line.split(','):
+                            tag = tag.strip()
+                            if tag:
+                                tags.append(tag)
+                    else:
                         tags.append(line)
             
             return tags
@@ -901,28 +967,54 @@ class PhotoManager:
             # 获取现有照片信息
             photo = self.db.get_photo(photo_id)
             if not photo:
+                self.logger.error("Photo not found for tag update", photo_id=photo_id)
                 return
             
             # 准备更新数据
             update_data = {}
             
-            # 更新标签数据
+            # 更新标签数据 - 确保数据为JSON字符串格式
             if tag_data.get("simple_tags"):
-                update_data["simple_tags"] = tag_data["simple_tags"]
+                # 如果已经是列表，转换为JSON字符串
+                if isinstance(tag_data["simple_tags"], list):
+                    import json
+                    update_data["simple_tags"] = json.dumps(tag_data["simple_tags"], ensure_ascii=False)
+                else:
+                    update_data["simple_tags"] = tag_data["simple_tags"]
+                    
             if tag_data.get("normal_tags"):
-                update_data["normal_tags"] = tag_data["normal_tags"]
+                if isinstance(tag_data["normal_tags"], list):
+                    import json
+                    update_data["normal_tags"] = json.dumps(tag_data["normal_tags"], ensure_ascii=False)
+                else:
+                    update_data["normal_tags"] = tag_data["normal_tags"]
+                    
             if tag_data.get("detailed_tags"):
-                update_data["detailed_tags"] = tag_data["detailed_tags"]
+                if isinstance(tag_data["detailed_tags"], list):
+                    import json
+                    update_data["detailed_tags"] = json.dumps(tag_data["detailed_tags"], ensure_ascii=False)
+                else:
+                    update_data["detailed_tags"] = tag_data["detailed_tags"]
             
             # 更新翻译数据
-            update_data["tag_translations"] = translated_tags
+            if translated_tags:
+                import json
+                update_data["tag_translations"] = json.dumps(translated_tags, ensure_ascii=False)
             
             # 更新数据库
             if update_data:
-                self.db.update_photo(photo_id, update_data)
-                self.logger.info("Photo tags updated", 
-                               photo_id=photo_id,
-                               update_data=update_data)
+                success = self.db.update_photo(photo_id, update_data)
+                if success:
+                    self.logger.info("Photo tags updated successfully", 
+                                   photo_id=photo_id,
+                                   simple_tags_count=len(tag_data.get("simple_tags", [])),
+                                   normal_tags_count=len(tag_data.get("normal_tags", [])),
+                                   detailed_tags_count=len(tag_data.get("detailed_tags", [])),
+                                   translations_count=len(translated_tags))
+                else:
+                    self.logger.error("Failed to update photo tags in database", photo_id=photo_id)
+            else:
+                self.logger.warning("No tag data to update", photo_id=photo_id)
             
         except Exception as e:
             self.logger.error("Failed to update photo tags", 
@@ -943,12 +1035,45 @@ class PhotoManager:
             if not photo:
                 return {}
             
+            # 解析JSON格式的标签数据
+            def parse_json_tags(tag_data):
+                """解析JSON格式的标签数据"""
+                if not tag_data:
+                    return []
+                try:
+                    if isinstance(tag_data, str):
+                        import json
+                        return json.loads(tag_data)
+                    elif isinstance(tag_data, list):
+                        return tag_data
+                    else:
+                        return []
+                except Exception as e:
+                    self.logger.warning("Failed to parse tag data", error=str(e))
+                    return []
+            
+            def parse_json_translations(translation_data):
+                """解析JSON格式的翻译数据"""
+                if not translation_data:
+                    return {}
+                try:
+                    if isinstance(translation_data, str):
+                        import json
+                        return json.loads(translation_data)
+                    elif isinstance(translation_data, dict):
+                        return translation_data
+                    else:
+                        return {}
+                except Exception as e:
+                    self.logger.warning("Failed to parse translation data", error=str(e))
+                    return {}
+            
             return {
-                "simple_tags": photo.get("simple_tags", []),
-                "normal_tags": photo.get("normal_tags", []),
-                "detailed_tags": photo.get("detailed_tags", []),
-                "tag_translations": photo.get("tag_translations", {}),
-                "tags": photo.get("tags", [])  # 原有的标签系统
+                "simple_tags": parse_json_tags(photo.get("simple_tags")),
+                "normal_tags": parse_json_tags(photo.get("normal_tags")),
+                "detailed_tags": parse_json_tags(photo.get("detailed_tags")),
+                "tag_translations": parse_json_translations(photo.get("tag_translations")),
+                "tags": parse_json_tags(photo.get("tags"))  # 原有的标签系统
             }
             
         except Exception as e:
@@ -956,3 +1081,389 @@ class PhotoManager:
                             photo_id=photo_id,
                             error=str(e))
             return {}
+    
+    def refresh_photo_ai_metadata(self, photo_id: int) -> bool:
+        """刷新单张图片的AI元数据
+        
+        Args:
+            photo_id: 图片ID
+            
+        Returns:
+            bool: 是否成功刷新
+        """
+        try:
+            # 获取照片信息
+            photo = self.db.get_photo(photo_id)
+            if not photo:
+                self.logger.error("Photo not found", photo_id=photo_id)
+                return False
+            
+            file_path = photo.get("filepath")
+            if not file_path or not Path(file_path).exists():
+                self.logger.error("Photo file not found", photo_id=photo_id, filepath=file_path)
+                return False
+            
+            # 提取AI元数据
+            ai_metadata = self.ai_extractor.extract_metadata(file_path)
+            
+            # 更新数据库
+            update_data = {
+                "ai_metadata": ai_metadata.to_dict(),
+                "is_ai_generated": ai_metadata.is_ai_generated
+            }
+            
+            success = self.db.update_photo(photo_id, update_data)
+            
+            if success:
+                self.logger.info("AI metadata refreshed", 
+                               photo_id=photo_id,
+                               is_ai_generated=ai_metadata.is_ai_generated,
+                               software=ai_metadata.generation_software)
+            else:
+                self.logger.error("Failed to update AI metadata in database", photo_id=photo_id)
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error("Failed to refresh AI metadata", 
+                            photo_id=photo_id,
+                            error=str(e))
+            return False
+    
+    def refresh_album_ai_metadata(self, album_id: int) -> Dict[str, Any]:
+        """刷新相册中所有图片的AI元数据
+        
+        Args:
+            album_id: 相册ID
+            
+        Returns:
+            Dict: 刷新结果统计
+        """
+        try:
+            # 获取相册中的所有照片
+            photos = self.db.get_album_photos(album_id)
+            if not photos:
+                self.logger.warning("No photos found in album", album_id=album_id)
+                return {"success": 0, "failed": 0, "total": 0}
+            
+            success_count = 0
+            failed_count = 0
+            
+            for photo in photos:
+                photo_id = photo.get("id")
+                if photo_id:
+                    if self.refresh_photo_ai_metadata(photo_id):
+                        success_count += 1
+                    else:
+                        failed_count += 1
+            
+            result = {
+                "success": success_count,
+                "failed": failed_count,
+                "total": len(photos)
+            }
+            
+            self.logger.info("Album AI metadata refresh completed", 
+                           album_id=album_id,
+                           result=result)
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error("Failed to refresh album AI metadata", 
+                            album_id=album_id,
+                            error=str(e))
+            return {"success": 0, "failed": 0, "total": 0}
+    
+    def get_photo_ai_metadata(self, photo_id: int) -> Optional[Dict[str, Any]]:
+        """获取图片的AI元数据
+        
+        Args:
+            photo_id: 图片ID
+            
+        Returns:
+            Dict: AI元数据，如果不存在则返回None
+        """
+        try:
+            photo = self.db.get_photo(photo_id)
+            if not photo:
+                return None
+            
+            # 添加调试信息
+            ai_metadata_raw = photo.get("ai_metadata", {})
+            is_ai_generated = photo.get("is_ai_generated", False)
+            
+            self.logger.info("Debug: AI metadata retrieval", 
+                           photo_id=photo_id,
+                           ai_metadata_type=type(ai_metadata_raw),
+                           ai_metadata_raw=ai_metadata_raw,
+                           is_ai_generated=is_ai_generated)
+            
+            if not ai_metadata_raw and not is_ai_generated:
+                return None
+            
+            return {
+                "ai_metadata": ai_metadata_raw,
+                "is_ai_generated": is_ai_generated
+            }
+            
+        except Exception as e:
+            self.logger.error("Failed to get photo AI metadata", 
+                            photo_id=photo_id,
+                            error=str(e))
+            return None
+    
+    def import_directory_optimized(self, directory_path: str, recursive: bool = True, 
+                                 album_id: Optional[int] = None, tag_settings: Optional[dict] = None,
+                                 max_workers: int = 4, batch_size: int = 50) -> Dict[str, Any]:
+        """
+        高性能批量导入目录中的所有照片。
+        使用多线程处理和批量数据库操作来提升性能。
+        
+        Args:
+            directory_path: 目录路径
+            recursive: 是否递归扫描子目录
+            album_id: 相册ID
+            tag_settings: 标签设置
+            max_workers: 最大工作线程数
+            batch_size: 批量处理大小
+            
+        Returns:
+            导入结果字典
+        """
+        try:
+            directory = Path(directory_path)
+            
+            if not directory.exists() or not directory.is_dir():
+                self.logger.error("Directory not found", path=str(directory))
+                return {"success": False, "error": "Directory not found"}
+            
+            # 获取所有图片文件
+            start_time = time.time()
+            image_files = list(self.directory_scanner.scan_directory(directory_path, recursive))
+            scan_time = time.time() - start_time
+            total_files = len(image_files)
+            
+            if total_files == 0:
+                self.logger.warning("No image files found in directory", path=str(directory))
+                return {"success": True, "imported": 0, "skipped": 0, "errors": 0, "total_processed": 0}
+            
+            self.logger.info("Starting optimized directory import", 
+                           path=str(directory), 
+                           total_files=total_files,
+                           max_workers=max_workers,
+                           batch_size=batch_size,
+                           scan_time=f"{scan_time:.2f}s",
+                           import_tags=tag_settings.get("import_tags", False) if tag_settings else False)
+            
+            # 预处理：检查重复文件
+            start_time = time.time()
+            file_hashes = self._batch_calculate_hashes(image_files, max_workers)
+            existing_hashes = self._batch_check_existing_hashes(list(file_hashes.values()))
+            preprocess_time = time.time() - start_time
+            
+            self.logger.info("Preprocessing completed", 
+                           preprocess_time=f"{preprocess_time:.2f}s",
+                           existing_files=len(existing_hashes))
+            
+            # 分离新文件和已存在的文件
+            new_files = []
+            existing_files = []
+            
+            for file_path, file_hash in file_hashes.items():
+                if file_hash in existing_hashes:
+                    existing_files.append((file_path, file_hash))
+                else:
+                    new_files.append((file_path, file_hash))
+            
+            self.logger.info("File classification completed", 
+                           new_files=len(new_files),
+                           existing_files=len(existing_files))
+            
+            # 批量处理新文件
+            imported_count = 0
+            error_count = 0
+            imported_photo_ids = []
+            
+            if new_files:
+                start_time = time.time()
+                batch_results = self._batch_import_photos(new_files, max_workers, batch_size, tag_settings)
+                import_time = time.time() - start_time
+                
+                imported_count = batch_results["imported"]
+                error_count = batch_results["errors"]
+                imported_photo_ids = batch_results["photo_ids"]
+                
+                self.logger.info("Batch import completed", 
+                               import_time=f"{import_time:.2f}s",
+                               imported=imported_count,
+                               errors=error_count)
+            
+            # 处理已存在的文件（更新路径等）
+            skipped_count = len(existing_files)
+            if existing_files:
+                start_time = time.time()
+                update_results = self._batch_update_existing_files(existing_files, max_workers)
+                update_time = time.time() - start_time
+                
+                self.logger.info("Existing files update completed", 
+                               update_time=f"{update_time:.2f}s",
+                               updated=update_results["updated"])
+            
+            # 关联相册
+            if album_id and imported_photo_ids:
+                start_time = time.time()
+                self._batch_associate_album(imported_photo_ids, album_id)
+                associate_time = time.time() - start_time
+                
+                self.logger.info("Album association completed", 
+                               associate_time=f"{associate_time:.2f}s",
+                               album_id=album_id,
+                               photo_count=len(imported_photo_ids))
+            
+            total_time = time.time() - start_time
+            result = {
+                "success": True,
+                "imported": imported_count,
+                "skipped": skipped_count,
+                "errors": error_count,
+                "total_processed": total_files,
+                "performance": {
+                    "scan_time": f"{scan_time:.2f}s",
+                    "preprocess_time": f"{preprocess_time:.2f}s",
+                    "import_time": f"{import_time:.2f}s" if new_files else "0.00s",
+                    "total_time": f"{total_time:.2f}s"
+                }
+            }
+            
+            self.logger.info("Optimized directory import completed", **result)
+            return result
+            
+        except Exception as e:
+            self.logger.error("Failed to import directory", 
+                            path=str(directory_path), 
+                            error=str(e))
+            return {"success": False, "error": str(e)}
+    
+    def _batch_calculate_hashes(self, image_files: List[Path], max_workers: int) -> Dict[Path, str]:
+        """批量计算文件哈希值"""
+        file_hashes = {}
+        
+        def calculate_hash(file_path):
+            try:
+                return file_path, self._calculate_file_hash(file_path)
+            except Exception as e:
+                self.logger.error("Error calculating hash", file=str(file_path), error=str(e))
+                return file_path, None
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {executor.submit(calculate_hash, file_path): file_path 
+                            for file_path in image_files}
+            
+            for future in as_completed(future_to_file):
+                file_path, file_hash = future.result()
+                if file_hash:
+                    file_hashes[file_path] = file_hash
+        
+        return file_hashes
+    
+    def _batch_check_existing_hashes(self, file_hashes: List[str]) -> set:
+        """批量检查已存在的文件哈希值"""
+        existing_hashes = set()
+        
+        # 分批查询数据库
+        batch_size = 100
+        for i in range(0, len(file_hashes), batch_size):
+            batch = file_hashes[i:i + batch_size]
+            existing = self.db.find_existing_hashes(batch)
+            existing_hashes.update(existing)
+        
+        return existing_hashes
+    
+    def _batch_import_photos(self, new_files: List[Tuple[Path, str]], max_workers: int, 
+                           batch_size: int, tag_settings: Optional[dict]) -> Dict[str, Any]:
+        """批量导入新照片"""
+        imported_count = 0
+        error_count = 0
+        photo_ids = []
+        
+        # 分批处理
+        for i in range(0, len(new_files), batch_size):
+            batch = new_files[i:i + batch_size]
+            
+            def process_file(file_info):
+                file_path, file_hash = file_info
+                try:
+                    if tag_settings and tag_settings.get("import_tags", False):
+                        result = self.import_photo_with_tags(str(file_path), tag_settings)
+                    else:
+                        result = self.import_photo(str(file_path))
+                    return file_path, result, None
+                except Exception as e:
+                    return file_path, None, str(e)
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_file = {executor.submit(process_file, file_info): file_info 
+                                for file_info in batch}
+                
+                for future in as_completed(future_to_file):
+                    file_path, result, error = future.result()
+                    if result:
+                        imported_count += 1
+                        photo_ids.append(result)
+                    elif error:
+                        error_count += 1
+                        self.logger.error("Error importing photo", file=str(file_path), error=error)
+        
+        return {
+            "imported": imported_count,
+            "errors": error_count,
+            "photo_ids": photo_ids
+        }
+    
+    def _batch_update_existing_files(self, existing_files: List[Tuple[Path, str]], 
+                                   max_workers: int) -> Dict[str, Any]:
+        """批量更新已存在文件的路径"""
+        updated_count = 0
+        
+        def update_file(file_info):
+            file_path, file_hash = file_info
+            try:
+                # 查找现有照片
+                existing_photo = self._find_by_hash(file_hash)
+                if existing_photo:
+                    current_filepath = str(file_path.absolute())
+                    stored_filepath = existing_photo["filepath"]
+                    
+                    if current_filepath != stored_filepath:
+                        # 更新文件路径
+                        update_data = {
+                            "filepath": current_filepath,
+                            "file_size": file_path.stat().st_size,
+                            "date_modified": datetime.now().isoformat()
+                        }
+                        
+                        if self.db.update_photo(existing_photo["id"], update_data):
+                            return True
+                return False
+            except Exception as e:
+                self.logger.error("Error updating existing file", file=str(file_path), error=str(e))
+                return False
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {executor.submit(update_file, file_info): file_info 
+                            for file_info in existing_files}
+            
+            for future in as_completed(future_to_file):
+                if future.result():
+                    updated_count += 1
+        
+        return {"updated": updated_count}
+    
+    def _batch_associate_album(self, photo_ids: List[int], album_id: int):
+        """批量关联相册"""
+        # 分批添加到相册
+        batch_size = 100
+        for i in range(0, len(photo_ids), batch_size):
+            batch = photo_ids[i:i + batch_size]
+            self.db.batch_add_photos_to_album(batch, album_id)

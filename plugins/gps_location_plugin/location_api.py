@@ -9,7 +9,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlencode
-import structlog
+import logging
 
 try:
     import requests
@@ -46,7 +46,7 @@ class BaseLocationAPI(ABC):
         """
         self.api_key = api_key
         self.timeout = timeout
-        self.logger = structlog.get_logger(f"gps_location_plugin.{self.get_api_name().lower()}")
+        self.logger = logging.getLogger(f"gps_location_plugin.{self.get_api_name().lower()}")
         self.last_request_time = 0
         
         if not REQUESTS_AVAILABLE:
@@ -550,7 +550,7 @@ class LocationAPIClient:
         Args:
             config: 配置字典
         """
-        self.logger = structlog.get_logger("gps_location_plugin.api_client")
+        self.logger = logging.getLogger("gps_location_plugin.api_client")
         self.config = config or {}
         
         # 初始化API服务

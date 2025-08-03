@@ -185,18 +185,19 @@ class LoggingManager:
         
         # Add renderer based on format
         if self.log_format == LogFormat.JSON:
-            processors.append(structlog.processors.JSONRenderer())
+            processors.append(structlog.processors.JSONRenderer(ensure_ascii=False))
         else:
-            processors.append(structlog.dev.ConsoleRenderer() 
-                             if self.log_format == LogFormat.COLORED 
-                             else structlog.dev.ConsoleRenderer(colors=False))
+            # Use a simple string renderer for better Chinese character support
+            processors.append(structlog.processors.format_exc_info)
+            processors.append(structlog.processors.UnicodeDecoder())
+            processors.append(structlog.dev.ConsoleRenderer(colors=(self.log_format == LogFormat.COLORED)))
         
         structlog.configure(
             processors=processors,
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
+            cache_logger_on_first_use=True
         )
         
         self.logger = structlog.get_logger("picman")

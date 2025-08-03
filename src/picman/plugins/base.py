@@ -4,7 +4,7 @@ Base plugin system for PyPhotoManager.
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-import structlog
+import logging
 
 
 class PluginInfo:
@@ -30,7 +30,7 @@ class Plugin(ABC):
     """Base class for all plugins."""
     
     def __init__(self):
-        self.logger = structlog.get_logger(f"picman.plugins.{self.__class__.__name__}")
+        self.logger = logging.getLogger(f"picman.plugins.{self.__class__.__name__}")
     
     @abstractmethod
     def get_info(self) -> PluginInfo:

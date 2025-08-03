@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 """
-PyPhotoManager - Professional Photo Management Software
+Photo666 - Professional Photo Management Software
 Main entry point for the application.
 """
 
@@ -13,7 +13,7 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 def main():
-    """Main entry point for PyPhotoManager."""
+    """Main entry point for Photo666."""
     try:
         from picman.gui.main_window import main as gui_main
         return gui_main()

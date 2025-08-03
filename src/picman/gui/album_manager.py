@@ -213,13 +213,19 @@ class AlbumManager(QWidget):
         self.add_photos_btn.setEnabled(False)
         photos_header.addWidget(self.add_photos_btn)
         
+        # Import tags button
+        self.import_tags_btn = QPushButton("导入标签")
+        self.import_tags_btn.clicked.connect(self.import_tags_from_files)
+        self.import_tags_btn.setEnabled(False)
+        photos_header.addWidget(self.import_tags_btn)
+        
         photos_layout.addLayout(photos_header)
         
         # Thumbnail grid for album photos
         self.thumbnail_widget = ThumbnailWidget()
         self.thumbnail_widget.selection_changed.connect(self.on_photo_selection_changed)
         self.thumbnail_widget.photo_selected.connect(self.on_thumbnail_photo_selected)  # 直接连接信号
-        self.thumbnail_widget.set_multi_select_mode(False)  # 禁用多选模式，优先支持点击查看
+        self.thumbnail_widget.set_multi_select_mode(False)  # 启用单选模式
         photos_layout.addWidget(self.thumbnail_widget)
         
         # Operation buttons (2区下方 - 操作按钮)
@@ -233,6 +239,15 @@ class AlbumManager(QWidget):
     def create_operation_buttons(self, layout):
         """Create operation buttons for photo management."""
         button_layout = QHBoxLayout()
+        
+        # Multi-select mode button
+        self.multi_select_btn = QPushButton("多选模式")
+        self.multi_select_btn.setCheckable(True)
+        self.multi_select_btn.setChecked(False)  # Default to single-select mode
+        self.multi_select_btn.clicked.connect(self.toggle_multi_select_mode)
+        button_layout.addWidget(self.multi_select_btn)
+        
+        button_layout.addStretch()  # Add spacing
         
         # Delete thumbnail button
         self.delete_thumbnail_btn = QPushButton("删除缩略图")
@@ -260,6 +275,18 @@ class AlbumManager(QWidget):
         
         layout.addLayout(button_layout)
     
+    def toggle_multi_select_mode(self):
+        """Toggle multi-select mode."""
+        is_multi_select = self.multi_select_btn.isChecked()
+        self.thumbnail_widget.set_multi_select_mode(is_multi_select)
+        
+        if is_multi_select:
+            self.multi_select_btn.setText("多选模式")
+            self.multi_select_btn.setStyleSheet("background-color: #3498db; color: white;")
+        else:
+            self.multi_select_btn.setText("单选模式")
+            self.multi_select_btn.setStyleSheet("")
+    
     def on_photo_selection_changed(self, selected_ids: list):
         """Handle photo selection change."""
         has_selection = len(selected_ids) > 0
@@ -273,6 +300,9 @@ class AlbumManager(QWidget):
             self.export_original_btn.setEnabled(has_selection)
         if hasattr(self, 'export_thumbnail_btn'):
             self.export_thumbnail_btn.setEnabled(has_selection)
+        if hasattr(self, 'import_tags_btn'):
+            # 导入标签按钮在有选中图片或有当前相册时都可以启用
+            self.import_tags_btn.setEnabled(has_selection or self.current_album_id is not None)
     
     def delete_selected_thumbnails(self):
         """Delete selected photo thumbnails from database."""
@@ -281,30 +311,35 @@ class AlbumManager(QWidget):
             return
         
         reply = QMessageBox.question(
-            self, "确认删除", 
-            f"确定要删除选中的 {len(selected_photos)} 张照片的缩略图吗？\n原图文件不会被删除。",
+            self, "确认删除缩略图", 
+            f"确定要删除选中的 {len(selected_photos)} 张照片的缩略图吗？\n原图文件不会被删除，但数据库中的图片信息将被删除。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            deleted_count = 0
             for photo in selected_photos:
                 photo_id = photo.get("id")
                 if photo_id:
-                    # Delete thumbnail file
-                    thumbnail_path = photo.get("thumbnail_path", "")
-                    if thumbnail_path and Path(thumbnail_path).exists():
-                        try:
+                    try:
+                        # Delete thumbnail file
+                        thumbnail_path = photo.get("thumbnail_path", "")
+                        if thumbnail_path and Path(thumbnail_path).exists():
                             Path(thumbnail_path).unlink()
-                        except Exception as e:
-                            self.logger.error("Failed to delete thumbnail", 
-                                            photo_id=photo_id, error=str(e))
-                    
-                    # Update database to remove thumbnail reference
-                    self.db_manager.update_photo(photo_id, {"thumbnail_path": ""})
+                        
+                        # Delete from database
+                        self.db_manager.delete_photo(photo_id)
+                        deleted_count += 1
+                        
+                    except Exception as e:
+                        self.logger.error("Failed to delete thumbnail", 
+                                        photo_id=photo_id, error=str(e))
             
             # Refresh display
-            self.load_album_photos(self.current_album_id)
-            QMessageBox.information(self, "删除完成", "缩略图删除完成")
+            if self.current_album_id:
+                self.load_album_photos(self.current_album_id)
+            
+            QMessageBox.information(self, "删除完成", f"成功删除 {deleted_count} 张照片的缩略图和数据库信息")
     
     def delete_selected_originals(self):
         """Delete selected original photos with confirmation."""
@@ -319,6 +354,13 @@ class AlbumManager(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            # Ask about database deletion
+            db_reply = QMessageBox.question(
+                self, "数据库删除确认", 
+                "是否同时删除数据库中的缩略图和图片信息？\n选择'是'将删除所有相关信息，选择'否'将保留数据库信息。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
             # Second confirmation for destructive action
             reply2 = QMessageBox.warning(
                 self, "最终确认", 
@@ -327,13 +369,27 @@ class AlbumManager(QWidget):
             )
             
             if reply2 == QMessageBox.StandardButton.Yes:
+                deleted_count = 0
                 for photo in selected_photos:
                     photo_id = photo.get("id")
                     filepath = photo.get("filepath", "")
                     
                     if filepath and Path(filepath).exists():
                         try:
+                            # Delete original file
                             Path(filepath).unlink()
+                            
+                            # Delete from database if requested
+                            if db_reply == QMessageBox.StandardButton.Yes:
+                                # Delete thumbnail file
+                                thumbnail_path = photo.get("thumbnail_path", "")
+                                if thumbnail_path and Path(thumbnail_path).exists():
+                                    Path(thumbnail_path).unlink()
+                                
+                                # Delete from database
+                                self.db_manager.delete_photo(photo_id)
+                            
+                            deleted_count += 1
                             self.logger.info("Deleted original photo", 
                                            photo_id=photo_id, filepath=filepath)
                         except Exception as e:
@@ -341,8 +397,10 @@ class AlbumManager(QWidget):
                                             photo_id=photo_id, error=str(e))
                 
                 # Refresh display
-                self.load_album_photos(self.current_album_id)
-                QMessageBox.information(self, "删除完成", "原图文件删除完成")
+                if self.current_album_id:
+                    self.load_album_photos(self.current_album_id)
+                
+                QMessageBox.information(self, "删除完成", f"成功删除 {deleted_count} 张原图文件")
     
     def export_selected_originals(self):
         """Export selected original photos."""
@@ -676,6 +734,7 @@ class AlbumManager(QWidget):
                 self.current_album_id = item.album_id
                 self.album_title_label.setText(f"<b>{item.album_data.get('name', 'Unknown')}</b>")
                 self.add_photos_btn.setEnabled(True)
+                self.import_tags_btn.setEnabled(True)
                 self.remove_album_btn.setEnabled(True)
                 
                 # Load album photos
@@ -691,6 +750,7 @@ class AlbumManager(QWidget):
                 self.current_album_id = None  # No single current album
                 self.album_title_label.setText(f"<b>多个相册 ({len(selected_album_ids)} 个)</b>")
                 self.add_photos_btn.setEnabled(False)  # Can't add to multiple albums
+                self.import_tags_btn.setEnabled(False)  # Can't import to multiple albums
                 self.remove_album_btn.setEnabled(True)
                 
                 # Load photos from all selected albums
@@ -743,6 +803,68 @@ class AlbumManager(QWidget):
         # In a real implementation, this would show a photo selector
         QMessageBox.information(self, "Add Photos", 
                               "Photo selector not implemented yet.")
+    
+    def import_tags_from_files(self):
+        """Import tags from files for selected photos or current album."""
+        try:
+            # 获取选中的图片路径
+            selected_photo_paths = []
+            
+            # 检查是否有选中的图片
+            selected_photos = self.thumbnail_widget.get_selected_photos()
+            if selected_photos:
+                # 获取选中图片的路径
+                for photo in selected_photos:
+                    photo_id = photo.get("id")
+                    if photo_id:
+                        photo_path = self.get_photo_path_by_id(photo_id)
+                        if photo_path:
+                            selected_photo_paths.append(photo_path)
+            
+            # 如果没有选中图片，则处理当前相册的所有图片
+            if not selected_photo_paths and self.current_album_id:
+                selected_photo_paths = self.get_all_photos_in_album(self.current_album_id)
+            
+            if not selected_photo_paths:
+                QMessageBox.warning(self, "警告", "请先选择图片或相册")
+                return
+            
+            # 导入标签对话框
+            from src.picman.gui.tag_import_dialog import TagImportDialog
+            dialog = TagImportDialog(selected_photo_paths, self.db_manager, self)
+            
+            if dialog.exec() == TagImportDialog.DialogCode.Accepted:
+                # 导入成功，刷新显示
+                self.load_album_photos(self.current_album_id)
+                self.photos_updated.emit()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"导入标签失败: {str(e)}")
+    
+    def get_photo_path_by_id(self, photo_id: int) -> Optional[str]:
+        """根据图片ID获取图片路径"""
+        try:
+            query = "SELECT filepath FROM photos WHERE id = ?"
+            result = self.db_manager.fetch_one(query, (photo_id,))
+            return result[0] if result else None
+        except Exception as e:
+            print(f"获取图片路径失败: {str(e)}")
+            return None
+    
+    def get_all_photos_in_album(self, album_id: int) -> List[str]:
+        """获取相册中所有图片的路径"""
+        try:
+            query = """
+                SELECT p.filepath 
+                FROM photos p 
+                JOIN album_photos ap ON p.id = ap.photo_id 
+                WHERE ap.album_id = ?
+            """
+            results = self.db_manager.fetch_all(query, (album_id,))
+            return [row[0] for row in results] if results else []
+        except Exception as e:
+            print(f"获取相册图片失败: {str(e)}")
+            return []
     
     def show_album_context_menu(self, position):
         """Show context menu for an album."""

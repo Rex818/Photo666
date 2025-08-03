@@ -72,19 +72,17 @@ class DatabaseManager:
                     "date_added": str,
                     "date_modified": str,
                     "exif_data": str,  # JSON string
+                    "ai_metadata": str,  # JSON string - AI元数据
+                    "is_ai_generated": bool,  # 是否为AI生成
                     "tags": str,       # JSON array
                     "simple_tags": str,    # JSON array - 简单标签
-                    "normal_tags": str,    # 普通标签
-                    "detailed_tags": str,  # 详细标签
-                    "tag_translations": str,  # 标签翻译
+                    "normal_tags": str,    # JSON array - 普通标签
+                    "detailed_tags": str,  # JSON array - 详细标签
+                    "tag_translations": str,  # JSON object - 标签翻译
                     "rating": int,
                     "is_favorite": bool,
                     "thumbnail_path": str,
-                    "notes": str,
-                    "gps_latitude": float,
-                    "gps_longitude": float,
-                    "gps_altitude": float,
-                    "location_text": str
+                    "notes": str
                 }, pk="id")
                 
                 # Create indexes
@@ -162,10 +160,8 @@ class DatabaseManager:
                     ("normal_tags", "TEXT DEFAULT '[]'"),
                     ("detailed_tags", "TEXT DEFAULT '[]'"),
                     ("tag_translations", "TEXT DEFAULT '{}'"),
-                    ("gps_latitude", "REAL DEFAULT NULL"),
-                    ("gps_longitude", "REAL DEFAULT NULL"),
-                    ("gps_altitude", "REAL DEFAULT NULL"),
-                    ("location_text", "TEXT DEFAULT NULL")
+                    ("ai_metadata", "TEXT DEFAULT '{}'"),
+                    ("is_ai_generated", "BOOLEAN DEFAULT 0")
                 ]
                 
                 for column_name, column_def in new_columns:
@@ -212,14 +208,12 @@ class DatabaseManager:
                 "normal_tags": safe_json_dumps(photo_data.get("normal_tags", [])),
                 "detailed_tags": safe_json_dumps(photo_data.get("detailed_tags", [])),
                 "tag_translations": safe_json_dumps(photo_data.get("tag_translations", {})),
+                "ai_metadata": safe_json_dumps(photo_data.get("ai_metadata", {})),
+                "is_ai_generated": photo_data.get("is_ai_generated", False),
                 "rating": photo_data.get("rating", 0),
                 "is_favorite": photo_data.get("is_favorite", False),
                 "thumbnail_path": photo_data.get("thumbnail_path", ""),
-                "notes": photo_data.get("notes", ""),
-                "gps_latitude": photo_data.get("gps_latitude"),
-                "gps_longitude": photo_data.get("gps_longitude"),
-                "gps_altitude": photo_data.get("gps_altitude"),
-                "location_text": photo_data.get("location_text")
+                "notes": photo_data.get("notes", "")
             }
             
             result = db["photos"].insert(photo_record)
@@ -254,6 +248,20 @@ class DatabaseManager:
                 photo_dict["normal_tags"] = json.loads(photo_dict.get("normal_tags", "[]"))
                 photo_dict["detailed_tags"] = json.loads(photo_dict.get("detailed_tags", "[]"))
                 photo_dict["tag_translations"] = json.loads(photo_dict.get("tag_translations", "{}"))
+                
+                # 解析AI元数据字段
+                ai_metadata_str = photo_dict.get("ai_metadata")
+                if ai_metadata_str and ai_metadata_str.strip():
+                    try:
+                        photo_dict["ai_metadata"] = json.loads(ai_metadata_str)
+                    except (json.JSONDecodeError, TypeError):
+                        self.logger.warning("Failed to parse AI metadata JSON", 
+                                          photo_id=photo_id, 
+                                          ai_metadata_str=ai_metadata_str)
+                        photo_dict["ai_metadata"] = {}
+                else:
+                    photo_dict["ai_metadata"] = {}
+                photo_dict["is_ai_generated"] = bool(photo_dict.get("is_ai_generated", False))
                 
                 return photo_dict
             
@@ -307,14 +315,17 @@ class DatabaseManager:
             if search_terms:
                 term_conditions = []
                 for term in search_terms:
-                    # 在文件名、备注、标签中搜索，包括中英文标签
+                    # 在文件名、备注、标签、AI元数据中搜索，包括中英文标签
                     term_conditions.append("""
                         (filename LIKE ? OR notes LIKE ? OR 
                          simple_tags LIKE ? OR normal_tags LIKE ? OR detailed_tags LIKE ? OR
                          tag_translations LIKE ? OR
-                         json_extract(tag_translations, '$.' || ?) LIKE ?)
+                         json_extract(tag_translations, '$.' || ?) LIKE ? OR
+                         ai_metadata LIKE ? OR
+                         json_extract(ai_metadata, '$.positive_prompt') LIKE ? OR
+                         json_extract(ai_metadata, '$.model_name') LIKE ?)
                     """)
-                    params.extend([f"%{term}%"] * 6 + [term, f"%{term}%"])
+                    params.extend([f"%{term}%"] * 6 + [term, f"%{term}%", f"%{term}%", f"%{term}%", f"%{term}%"])
                 
                 if term_conditions:
                     sql_conditions.append(f"({' OR '.join(term_conditions)})")
@@ -441,6 +452,17 @@ class DatabaseManager:
                     except:
                         photo_dict["tag_translations"] = {}
                     
+                    # 解析AI元数据字段
+                    try:
+                        photo_dict["ai_metadata"] = json.loads(photo_dict.get("ai_metadata", "{}"))
+                    except:
+                        photo_dict["ai_metadata"] = {}
+                    
+                    try:
+                        photo_dict["is_ai_generated"] = bool(photo_dict.get("is_ai_generated", False))
+                    except:
+                        photo_dict["is_ai_generated"] = False
+                    
                     photos.append(photo_dict)
                 
                 self.logger.info("Search results", count=len(photos))
@@ -479,15 +501,9 @@ class DatabaseManager:
             if "tag_translations" in update_data and isinstance(update_data["tag_translations"], dict):
                 update_data["tag_translations"] = safe_json_dumps(update_data["tag_translations"])
             
-            # gps_latitude/gps_longitude直接写入
-            if "gps_latitude" in update_data:
-                pass
-            if "gps_longitude" in update_data:
-                pass
-            if "gps_altitude" in update_data:
-                pass
-            if "location_text" in update_data:
-                pass
+            # 处理AI元数据字段
+            if "ai_metadata" in update_data and isinstance(update_data["ai_metadata"], dict):
+                update_data["ai_metadata"] = safe_json_dumps(update_data["ai_metadata"])
             
             db["photos"].update(photo_id, update_data)
             
@@ -609,6 +625,10 @@ class DatabaseManager:
                 photo_dict["normal_tags"] = json.loads(photo_dict.get("normal_tags", "[]"))
                 photo_dict["detailed_tags"] = json.loads(photo_dict.get("detailed_tags", "[]"))
                 photo_dict["tag_translations"] = json.loads(photo_dict.get("tag_translations", "{}"))
+                
+                # 解析AI元数据字段
+                photo_dict["ai_metadata"] = json.loads(photo_dict.get("ai_metadata", "{}"))
+                photo_dict["is_ai_generated"] = bool(photo_dict.get("is_ai_generated", False))
                 
                 result.append(photo_dict)
             
@@ -751,3 +771,34 @@ class DatabaseManager:
                     break
         
         return False
+    
+    def fetch_one(self, query: str, params: tuple = ()) -> Optional[tuple]:
+        """Execute a query and return a single row."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(query, params)
+                return cursor.fetchone()
+        except Exception as e:
+            self.logger.error("Failed to fetch one", query=query, error=str(e))
+            return None
+    
+    def fetch_all(self, query: str, params: tuple = ()) -> List[tuple]:
+        """Execute a query and return all rows."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(query, params)
+                return cursor.fetchall()
+        except Exception as e:
+            self.logger.error("Failed to fetch all", query=query, error=str(e))
+            return []
+    
+    def execute(self, query: str, params: tuple = ()) -> bool:
+        """Execute a query without returning results."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(query, params)
+                conn.commit()
+                return True
+        except Exception as e:
+            self.logger.error("Failed to execute query", query=query, error=str(e))
+            return False

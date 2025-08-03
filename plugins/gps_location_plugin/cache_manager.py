@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-import structlog
+import logging
 
 try:
     from .models import GPSCoordinate, LocationInfo, CacheEntry
@@ -33,7 +33,7 @@ class LocationCache:
             db_path: 数据库文件路径，如果为None则使用默认路径
             precision: 坐标匹配精度（度），默认0.001约为100米
         """
-        self.logger = structlog.get_logger("gps_location_plugin.cache_manager")
+        self.logger = logging.getLogger("gps_location_plugin.cache_manager")
         
         # 设置数据库路径
         if db_path is None:
@@ -544,10 +544,3 @@ class LocationCache:
         except Exception as e:
             self.logger.error("Cache import failed", error=str(e))
             return False
-
-    def get(self, coordinate):
-        """兼容插件主类调用，等价于get_cached_location"""
-        return self.get_cached_location(coordinate)
-    def set(self, coordinate, location):
-        """兼容插件主类调用，等价于cache_location"""
-        return self.cache_location(coordinate, location)
