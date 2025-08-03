@@ -28,7 +28,7 @@
 #### 方法二：源码安装
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-username/photo666.git
+git clone https://github.com/Rex818/photo666.git
 cd photo666
 
 # 2. 创建虚拟环境
@@ -47,16 +47,12 @@ python main.py
 ### macOS 用户
 
 #### 方法一：便携版
-1. 下载 `Photo666_v0.1.0_Portable.zip`
-2. 解压到任意目录
-3. 打开终端，进入解压目录
-4. 运行 `./Photo666.sh`
-5. 首次运行会自动安装依赖
+1. 暂时没提供，1.0版就不要装了。
 
 #### 方法二：源码安装
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-username/photo666.git
+git clone https://github.com/Rex818/photo666.git
 cd photo666
 
 # 2. 创建虚拟环境
@@ -81,7 +77,7 @@ sudo apt update
 sudo apt install python3 python3-venv python3-pip
 
 # 2. 下载并解压
-wget https://github.com/your-username/photo666/releases/download/v0.1.0/Photo666_v0.1.0_Portable.zip
+wget https://github.com/Rex818/photo666/releases/download/v0.1.0/Photo666_v0.1.0_Portable.zip
 unzip Photo666_v0.1.0_Portable.zip
 cd Photo666_v0.1.0_Portable
 
