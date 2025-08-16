@@ -1,29 +1,10 @@
 {
-    "name": "Google翻译插件",
-    "version": "1.0.0",
-    "description": "使用免费的googletrans库进行标签翻译",
-    "author": "PicMan Team",
-    "enabled": true,
-    "config": {
-        "source_language": "en",
-        "target_language": "zh-CN",
-        "max_retries": 1,
-        "base_delay": 0.2,
-        "max_delay": 1.0,
-        "request_interval": 0.3
-    },
-    "config_examples": {
-        "英文到中文": {
-            "source_language": "en",
-            "target_language": "zh-CN"
-        },
-        "中文到英文": {
-            "source_language": "zh-CN",
-            "target_language": "en"
-        },
-        "自动检测到中文": {
-            "source_language": "auto",
-            "target_language": "zh-CN"
-        }
-    }
+  "config": {
+    "source_language": "en",
+    "target_language": "zh-CN",
+    "max_retries": 3,
+    "base_delay": 0.5,
+    "max_delay": 2.0,
+    "request_interval": 1.0
+  }
 }

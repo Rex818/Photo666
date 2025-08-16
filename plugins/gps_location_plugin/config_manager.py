@@ -58,10 +58,10 @@ class PluginConfig:
                 self.logger.info("Created default config file")
                 
         except json.JSONDecodeError as e:
-            self.logger.error("Config file JSON decode error", error=str(e))
+            self.logger.error("Config file JSON decode error: error=%s", str(e))
             raise ConfigurationError(f"配置文件JSON格式错误: {str(e)}")
         except Exception as e:
-            self.logger.error("Failed to load config", error=str(e))
+            self.logger.error("Failed to load config: error=%s", str(e))
             raise ConfigurationError(f"配置文件加载失败: {str(e)}")
     
     def _save_config(self):
@@ -79,7 +79,7 @@ class PluginConfig:
             self.logger.debug("Config saved to file")
             
         except Exception as e:
-            self.logger.error("Failed to save config", error=str(e))
+            self.logger.error("Failed to save config: error=%s", str(e))
             raise ConfigurationError(f"配置文件保存失败: {str(e)}")
     
     def _get_default_config(self) -> Dict[str, Any]:
@@ -172,10 +172,10 @@ class PluginConfig:
             if save:
                 self._save_config()
             
-            self.logger.debug("Config value set", key=key, value=value)
+            self.logger.debug("Config value set: key=%s, value=%s", key, value)
             
         except Exception as e:
-            self.logger.error("Failed to set config value", key=key, error=str(e))
+            self.logger.error("Failed to set config value: key=%s, error=%s", key, str(e))
             raise ConfigurationError(f"设置配置值失败: {key} = {value}")
     
     def update(self, updates: Dict[str, Any], save: bool = True):
@@ -192,10 +192,10 @@ class PluginConfig:
             if save:
                 self._save_config()
             
-            self.logger.debug("Config batch updated", count=len(updates))
+            self.logger.debug("Config batch updated: count=%d", len(updates))
             
         except Exception as e:
-            self.logger.error("Failed to batch update config", error=str(e))
+            self.logger.error("Failed to batch update config: error=%s", str(e))
             raise ConfigurationError(f"批量更新配置失败: {str(e)}")
     
     def validate(self) -> List[str]:
@@ -276,7 +276,7 @@ class PluginConfig:
             errors.append(f"配置验证异常: {str(e)}")
         
         if errors:
-            self.logger.warning("Config validation failed", errors=errors)
+            self.logger.warning("Config validation failed: errors=%s", errors)
         else:
             self.logger.debug("Config validation passed")
         
@@ -297,7 +297,7 @@ class PluginConfig:
             self.logger.info("Config reset to default")
             
         except Exception as e:
-            self.logger.error("Failed to reset config", error=str(e))
+            self.logger.error("Failed to reset config: error=%s", str(e))
             raise ConfigurationError(f"重置配置失败: {str(e)}")
     
     def export_config(self, export_path: str) -> bool:
@@ -321,7 +321,7 @@ class PluginConfig:
             return True
             
         except Exception as e:
-            self.logger.error("Config export failed", error=str(e))
+            self.logger.error("Config export failed: error=%s", str(e))
             return False
     
     def import_config(self, import_path: str, validate_first: bool = True) -> bool:
@@ -351,7 +351,7 @@ class PluginConfig:
                 if errors:
                     # 恢复原配置
                     self.config_data = original_config
-                    self.logger.error("Imported config validation failed", errors=errors)
+                    self.logger.error("Imported config validation failed: errors=%s", errors)
                     return False
             
             # 应用导入的配置
@@ -362,7 +362,7 @@ class PluginConfig:
             return True
             
         except Exception as e:
-            self.logger.error("Config import failed", error=str(e))
+            self.logger.error("Config import failed: error=%s", str(e))
             return False
     
     def get_api_config(self) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QLineEdit, QGroupBox, QFileDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-import structlog
+import logging
 
 from ..config.manager import ConfigManager
 from ..utils.translation import TranslationManager
@@ -22,7 +22,9 @@ class SettingsDialog(QDialog):
     def __init__(self, config_manager: ConfigManager, parent=None):
         super().__init__(parent)
         self.config = config_manager
-        self.logger = structlog.get_logger("picman.gui.settings_dialog")
+        # 配置标准logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger("picman.gui.settings_dialog")
         
         # Get translation manager from parent if available
         self.translation_manager = None

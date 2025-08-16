@@ -1,9 +1,14 @@
-﻿# Photo666 Dependencies
+﻿# Photo666 v0.3.0 Dependencies
+# ========================================
+# 核心依赖
+# ========================================
+
 # Core GUI Framework
 PyQt6>=6.5.0
 
 # Image Processing
-Pillow>=10.0.0
+Pillow>=10.2.0
+pillow>=10.2.0  # 兼容性别名
 
 # Configuration Management
 PyYAML>=6.0.0
@@ -11,10 +16,72 @@ PyYAML>=6.0.0
 # Database Utilities
 sqlite-utils>=3.35.0
 
-# Development Dependencies
+# Translation Support
+googletrans-py>=4.0.0
+
+# Async Support
+asyncio-mqtt>=0.11.0
+aiofiles>=22.0.0
+
+# ========================================
+# AI模型依赖
+# ========================================
+
+# PyTorch (所有AI插件都需要)
+torch>=2.0.1
+torchvision>=0.15.0
+
+# Transformers (AI模型框架)
+transformers>=4.39.0,!=4.50.*
+
+# Hugging Face Hub
+huggingface_hub>=0.16.0
+
+# Accelerate (模型加速)
+accelerate>=0.26.0
+
+# Safetensors (模型文件格式)
+safetensors>=0.3.0
+
+# Bitsandbytes (量化支持)
+bitsandbytes>=0.41.0
+
+# ========================================
+# 计算机视觉依赖
+# ========================================
+
+# NumPy (数值计算)
+numpy>=1.24.0
+
+# Einops (张量操作)
+einops>=0.8.0
+
+# Timm (图像模型)
+timm>=1.0.0
+
+# ========================================
+# 网络和工具依赖
+# ========================================
+
+# HTTP请求
+requests>=2.28.0
+
+# 地理计算
+geopy>=2.3.0
+
+# 进度条
+tqdm>=4.60.0
+
+# ========================================
+# 开发依赖 (可选)
+# ========================================
+
+# Testing
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-qt>=4.2.0
+
+# Code Quality
 black>=23.0.0
 mypy>=1.0.0
 
@@ -27,20 +94,21 @@ PyInstaller>=5.0.0
 setuptools>=65.0.0
 wheel>=0.38.0
 
-# Logging and Monitoring
-structlog>=22.0.0
-
-# Translation Support
-googletrans-py>=4.0.0
-
-# Async Support
-asyncio-mqtt>=0.11.0
-aiofiles>=22.0.0
-
-# GPS Location Plugin Dependencies
-requests>=2.28.0
-geopy>=2.3.0
-
 # Testing Utilities
 factory-boy>=3.2.0
 faker>=18.0.0
+
+# ========================================
+# 特殊依赖
+# ========================================
+
+# Janus AI模型 (从GitHub安装)
+git+https://github.com/deepseek-ai/Janus.git
+
+# ========================================
+# 注意事项
+# ========================================
+# 1. 首次安装可能需要较长时间，因为需要下载AI模型
+# 2. 建议在虚拟环境中安装
+# 3. 如果遇到网络问题，可以使用国内镜像源
+# 4. 某些依赖可能需要特定的CUDA版本支持

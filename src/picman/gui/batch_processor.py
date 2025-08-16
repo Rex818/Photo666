@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QGroupBox, QFormLayout, QTabWidget, QWidget, QLineEdit
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
-import structlog
+import logging
 
 from ..core.image_processor import ImageProcessor
 from ..core.photo_manager import PhotoManager
@@ -288,7 +288,9 @@ class BatchProcessorDialog(QDialog):
         self.photo_manager = photo_manager
         self.image_processor = image_processor
         self.selected_photos = selected_photos or []
-        self.logger = structlog.get_logger("picman.gui.batch_processor")
+        # 配置标准logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger("picman.gui.batch_processor")
         
         self.init_ui()
     

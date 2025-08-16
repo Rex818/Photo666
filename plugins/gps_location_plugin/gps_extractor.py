@@ -63,7 +63,7 @@ class GPSExtractor:
                 exif_data = img._getexif()
                 
                 if not exif_data:
-                    self.logger.debug("No EXIF data found", file=image_path)
+                    self.logger.debug("No EXIF data found: %s", image_path)
                     return None
                 
                 # 转换EXIF数据为可读格式
@@ -75,7 +75,7 @@ class GPSExtractor:
                 # 提取GPS信息
                 gps_info = exif_dict.get('GPSInfo')
                 if not gps_info:
-                    self.logger.debug("No GPS info found in EXIF", file=image_path)
+                    self.logger.debug("No GPS info found in EXIF: %s", image_path)
                     return None
                 
                 # 转换GPS信息为可读格式
@@ -157,8 +157,7 @@ class GPSExtractor:
                 if not coordinate.is_valid():
                     raise InvalidCoordinateError(lat_decimal, lon_decimal)
                 
-                self.logger.debug("GPS coordinates extracted successfully", 
-                                latitude=lat_decimal, longitude=lon_decimal)
+                self.logger.debug("GPS coordinates extracted successfully: latitude=%s, longitude=%s", lat_decimal, lon_decimal)
                 return coordinate
                 
             except Exception as e:
@@ -258,7 +257,7 @@ class GPSExtractor:
             else:
                 return float(altitude)
         except (ValueError, TypeError, ZeroDivisionError):
-            self.logger.warning("Failed to convert altitude", altitude=altitude)
+            self.logger.warning("Failed to convert altitude: altitude=%s", altitude)
             return None
     
     def _validate_coordinates(self, lat: float, lon: float) -> bool:
@@ -300,8 +299,7 @@ class GPSExtractor:
             return None
             
         except Exception as e:
-            self.logger.error("Failed to extract GPS from PicMan data", 
-                            photo_id=photo_data.get('id'), error=str(e))
+            self.logger.error("Failed to extract GPS from PicMan data: photo_id=%s, error=%s", photo_data.get('id'), str(e))
             return None
     
     def get_supported_formats(self) -> List[str]:

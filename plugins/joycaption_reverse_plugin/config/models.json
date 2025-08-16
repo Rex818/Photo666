@@ -19,9 +19,7 @@
       },
       "local_search_paths": [
         "./models/llama-joycaption-beta-one-hf-llava",
-        "../models/llama-joycaption-beta-one-hf-llava",
-        "C:/AI_Models/llama-joycaption-beta-one-hf-llava",
-        "D:/AI_Models/llama-joycaption-beta-one-hf-llava"
+        "../models/llama-joycaption-beta-one-hf-llava"
       ]
     },
     "fancyfeast/llama-joycaption-alpha-two-hf-llava": {
@@ -41,9 +39,7 @@
       },
       "local_search_paths": [
         "./models/llama-joycaption-alpha-two-hf-llava",
-        "../models/llama-joycaption-alpha-two-hf-llava",
-        "C:/AI_Models/llama-joycaption-alpha-two-hf-llava",
-        "D:/AI_Models/llama-joycaption-alpha-two-hf-llava"
+        "../models/llama-joycaption-alpha-two-hf-llava"
       ]
     },
     "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": {
@@ -61,9 +57,7 @@
       },
       "local_search_paths": [
         "./models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-        "../models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-        "C:/AI_Models/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-        "D:/AI_Models/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
+        "../models/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
       ]
     },
     "unsloth/Meta-Llama-3.1-8B-Instruct": {
@@ -81,9 +75,7 @@
       },
       "local_search_paths": [
         "./models/Meta-Llama-3.1-8B-Instruct",
-        "../models/Meta-Llama-3.1-8B-Instruct",
-        "C:/AI_Models/Meta-Llama-3.1-8B-Instruct",
-        "D:/AI_Models/Meta-Llama-3.1-8B-Instruct"
+        "../models/Meta-Llama-3.1-8B-Instruct"
       ]
     },
     "John6666/Llama-3.1-8B-Lexi-Uncensored-V2-nf4": {
@@ -101,9 +93,7 @@
       },
       "local_search_paths": [
         "./models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
-        "../models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
-        "C:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4",
-        "D:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4"
+        "../models/Llama-3.1-8B-Lexi-Uncensored-V2-nf4"
       ]
     },
     "Orenguteng/Llama-3.1-8B-Lexi-Uncensored-V2": {
@@ -121,9 +111,7 @@
       },
       "local_search_paths": [
         "./models/Llama-3.1-8B-Lexi-Uncensored-V2",
-        "../models/Llama-3.1-8B-Lexi-Uncensored-V2",
-        "C:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2",
-        "D:/AI_Models/Llama-3.1-8B-Lexi-Uncensored-V2"
+        "../models/Llama-3.1-8B-Lexi-Uncensored-V2"
       ]
     },
     "meta-llama/Llama-2-7b-chat-hf": {
@@ -141,9 +129,7 @@
       },
       "local_search_paths": [
         "./models/Llama-2-7b-chat-hf",
-        "../models/Llama-2-7b-chat-hf",
-        "C:/AI_Models/Llama-2-7b-chat-hf",
-        "D:/AI_Models/Llama-2-7b-chat-hf"
+        "../models/Llama-2-7b-chat-hf"
       ]
     },
     "meta-llama/Llama-2-13b-chat-hf": {
@@ -161,9 +147,7 @@
       },
       "local_search_paths": [
         "./models/Llama-2-13b-chat-hf",
-        "../models/Llama-2-13b-chat-hf",
-        "C:/AI_Models/Llama-2-13b-chat-hf",
-        "D:/AI_Models/Llama-2-13b-chat-hf"
+        "../models/Llama-2-13b-chat-hf"
       ]
     },
     "google/gemma-2b-it": {
@@ -181,9 +165,7 @@
       },
       "local_search_paths": [
         "./models/gemma-2b-it",
-        "../models/gemma-2b-it",
-        "C:/AI_Models/gemma-2b-it",
-        "D:/AI_Models/gemma-2b-it"
+        "../models/gemma-2b-it"
       ]
     },
     "google/gemma-7b-it": {
@@ -201,9 +183,7 @@
       },
       "local_search_paths": [
         "./models/gemma-7b-it",
-        "../models/gemma-7b-it",
-        "C:/AI_Models/gemma-7b-it",
-        "D:/AI_Models/gemma-7b-it"
+        "../models/gemma-7b-it"
       ]
     }
   },
@@ -235,4 +215,4 @@
       "bnb_4bit_use_double_quant": true
     }
   }
-} 
+}

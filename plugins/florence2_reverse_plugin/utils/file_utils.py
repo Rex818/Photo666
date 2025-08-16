@@ -6,9 +6,9 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
-import structlog
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class FileUtils:
@@ -21,7 +21,7 @@ class FileUtils:
             Path(path).mkdir(parents=True, exist_ok=True)
             return True
         except Exception as e:
-            logger.error("创建目录失败", path=path, error=str(e))
+            logger.error("创建目录失败: path=%s, error=%s", path, str(e))
             return False
     
     @staticmethod
@@ -29,13 +29,13 @@ class FileUtils:
         """加载JSON文件"""
         try:
             if not os.path.exists(file_path):
-                logger.warning("文件不存在", file_path=file_path)
+                logger.warning("文件不存在: %s", file_path)
                 return None
             
             with open(file_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            logger.error("加载JSON文件失败", file_path=file_path, error=str(e))
+            logger.error("加载JSON文件失败: file_path=%s, error=%s", file_path, str(e))
             return None
     
     @staticmethod
@@ -48,10 +48,10 @@ class FileUtils:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             
-            logger.info("JSON文件保存成功", file_path=file_path)
+            logger.info("JSON文件保存成功: %s", file_path)
             return True
         except Exception as e:
-            logger.error("保存JSON文件失败", file_path=file_path, error=str(e))
+            logger.error("保存JSON文件失败: file_path=%s, error=%s", file_path, str(e))
             return False
     
     @staticmethod
@@ -60,7 +60,7 @@ class FileUtils:
         try:
             return os.path.getsize(file_path)
         except Exception as e:
-            logger.error("获取文件大小失败", file_path=file_path, error=str(e))
+            logger.error("获取文件大小失败: file_path=%s, error=%s", file_path, str(e))
             return 0
     
     @staticmethod
@@ -93,5 +93,5 @@ class FileUtils:
                     image_files.append(str(file_path))
             return image_files
         except Exception as e:
-            logger.error("获取图片文件失败", directory=directory, error=str(e))
+            logger.error("获取图片文件失败: directory=%s, error=%s", directory, str(e))
             return [] 

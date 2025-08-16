@@ -166,7 +166,7 @@ class GPSLocationPlugin(Plugin):
             # 验证配置
             errors = self.config.validate()
             if errors:
-                self.logger.warning("Config validation errors", errors=errors)
+                self.logger.warning("Config validation errors: errors=%s", errors)
                 # 可以选择重置为默认配置或继续使用
             
         except Exception as e:
@@ -221,7 +221,7 @@ class GPSLocationPlugin(Plugin):
             # 提取GPS坐标
             coordinate = self.gps_extractor.extract_gps_from_file(image_path)
             if not coordinate:
-                self.logger.debug("No GPS coordinates found", file=image_path)
+                self.logger.debug("No GPS coordinates found: %s", image_path)
                 return {}
             
             # 查询位置信息
@@ -366,8 +366,7 @@ class GPSLocationPlugin(Plugin):
                     import time
                     time.sleep(delay)
             
-            self.logger.info("Batch location query completed", 
-                           total=total, successful=sum(1 for v in results.values() if v))
+            self.logger.info("Batch location query completed: total=%s, successful=%s", total, sum(1 for v in results.values() if v))
             return results
             
         except Exception as e:
@@ -491,7 +490,7 @@ class GPSLocationPlugin(Plugin):
         if isinstance(error, GPSLocationError):
             return format_error_for_user(error)
         else:
-            self.logger.error("Unexpected error", error=str(error))
+            self.logger.error("Unexpected error: error=%s", str(error))
             return f"插件运行出错: {str(error)}"
     
     def cleanup_cache(self, max_age_days: int = None) -> int:

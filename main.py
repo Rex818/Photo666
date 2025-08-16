@@ -22,7 +22,10 @@ def main():
         print("Please ensure all dependencies are installed.")
         return 1
     except Exception as e:
+        import traceback
         print(f"Unexpected error: {e}")
+        print("Full traceback:")
+        traceback.print_exc()
         return 1
 
 if __name__ == "__main__":

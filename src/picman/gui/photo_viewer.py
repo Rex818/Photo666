@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent, QPoint
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QTransform
 from PyQt6.QtWidgets import QApplication
-import structlog
+import logging
 
 
 class PhotoViewer(QWidget):
@@ -27,7 +27,9 @@ class PhotoViewer(QWidget):
         self.current_photo = None
         self.current_pixmap = None
         self.original_pixmap = None
-        self.logger = structlog.get_logger("picman.gui.photo_viewer")
+        # 配置标准logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger("picman.gui.photo_viewer")
         
         # Zoom and rotation settings
         self.zoom_factor = 1.0
@@ -359,7 +361,7 @@ class PhotoViewer(QWidget):
         rating_layout.addWidget(self.category_tags_label)
         
         # 分类标签编辑按钮
-        self.edit_category_tags_btn = QPushButton("编辑分类标签")
+        self.edit_category_tags_btn = QPushButton("编辑分类")
         self.edit_category_tags_btn.clicked.connect(self.edit_category_tags)
         rating_layout.addWidget(self.edit_category_tags_btn)
         
@@ -382,7 +384,7 @@ class PhotoViewer(QWidget):
             self.original_pixmap and not self.original_pixmap.isNull()):
             # 同一张照片，只更新信息面板
             self.current_photo = photo_data
-            self.logger.info("同一张照片，跳过重新加载", path=photo_data.get("filepath"))
+            self.logger.info("同一张照片，跳过重新加载: %s", photo_data.get("filepath"))
             # 更新信息面板
             self.update_info_panel()
             return
@@ -408,7 +410,7 @@ class PhotoViewer(QWidget):
                 self.image_label.setPixmap(self.scale_pixmap(pixmap))
                 self.image_label.setText("")
                 original_found = True
-                self.logger.info("Original image displayed with EXIF orientation", path=file_path)
+                self.logger.info("Original image displayed with EXIF orientation: %s", file_path)
         
         # 如果原图不存在，尝试显示缩略图
         if not original_found:
@@ -428,8 +430,8 @@ class PhotoViewer(QWidget):
                     
                     # 显示提示信息
                     self.image_label.setStyleSheet("border: 2px solid orange;")
-                    self.logger.warning("Original image not found, displaying thumbnail", 
-                                      photo_id=photo_data.get('id'))
+                    self.logger.warning("Original image not found, displaying thumbnail: photo_id=%s", 
+                                      photo_data.get('id'))
                 else:
                     self.image_label.setText("原图查找不到\n缩略图也无法加载")
                     self.image_label.setStyleSheet("border: 2px solid red; color: red; font-size: 16px;")
@@ -497,7 +499,7 @@ class PhotoViewer(QWidget):
         # 更新标签显示
         self.update_tags_display(photo_data)
         
-        self.logger.info("Displayed photo info only", photo_id=photo_data.get('id'))
+        self.logger.info("Displayed photo info only: photo_id=%s", photo_data.get('id'))
     
     def display_photo_by_path(self, file_path: str):
         """Display a photo by file path."""
@@ -538,7 +540,7 @@ class PhotoViewer(QWidget):
             self.update_info_panel()
             
         except Exception as e:
-            self.logger.error("Failed to display photo", path=file_path, error=str(e))
+            self.logger.error("Failed to display photo: path=%s, error=%s", file_path, str(e))
             self.image_label.setText("Error loading image")
     
     def scale_pixmap(self, pixmap: QPixmap) -> QPixmap:
@@ -598,7 +600,7 @@ class PhotoViewer(QWidget):
                     else:  # Linux
                         subprocess.run(["xdg-open", str(file_path.parent)])
                 except Exception as e:
-                    self.logger.error("Failed to open file location", error=str(e))
+                    self.logger.error("Failed to open file location: %s", str(e))
 
     def update_info_panel(self):
         """Update the photo information panel."""
@@ -732,18 +734,17 @@ class PhotoViewer(QWidget):
                         {"notes": notes}
                     )
                     if success:
-                        self.logger.info("Notes saved to database", 
-                                       photo_id=self.current_photo.get('id'), 
-                                       notes_length=len(notes))
+                        self.logger.info("Notes saved to database: photo_id=%s, notes_length=%d", 
+                                       self.current_photo.get('id'), len(notes))
                         # 发送更新信号
                         self.photo_updated.emit(self.current_photo["id"])
                     else:
-                        self.logger.error("Failed to save notes to database", 
-                                        photo_id=self.current_photo.get('id'))
+                        self.logger.error("Failed to save notes to database: photo_id=%s", 
+                                        self.current_photo.get('id'))
                 else:
                     self.logger.error("Photo manager not available")
             except Exception as e:
-                self.logger.error("Failed to save notes", error=str(e))
+                self.logger.error("Failed to save notes: %s", str(e))
     
     def zoom_in(self):
         """Zoom in on the image."""
@@ -799,8 +800,7 @@ class PhotoViewer(QWidget):
                 transform = QTransform().rotate(self.rotation_angle)
                 rotated = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
                 self.current_pixmap = rotated
-                self.logger.info("应用用户旋转", 
-                               rotation_angle=self.rotation_angle,
+                self.logger.info("应用用户旋转: rotation_angle=%s", self.rotation_angle,
                                original_size=f"{self.original_pixmap.width()}x{self.original_pixmap.height()}",
                                rotated_size=f"{rotated.width()}x{rotated.height()}")
             else:
@@ -811,7 +811,7 @@ class PhotoViewer(QWidget):
             self.apply_zoom_and_display()
             
         except Exception as e:
-            self.logger.error("应用旋转失败", error=str(e))
+            self.logger.error("应用旋转失败: %s", str(e))
             # 如果失败，回退到原来的方法
             self.fallback_rotation_display()
     
@@ -825,8 +825,7 @@ class PhotoViewer(QWidget):
             transform = QTransform().rotate(self.rotation_angle)
             rotated = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
             self.current_pixmap = rotated
-            self.logger.info("使用回退方法应用旋转", 
-                            rotation_angle=self.rotation_angle,
+            self.logger.info("使用回退方法应用旋转: rotation_angle=%s", self.rotation_angle,
                             rotated_size=f"{rotated.width()}x{rotated.height()}")
         else:
             self.current_pixmap = self.original_pixmap
@@ -846,7 +845,7 @@ class PhotoViewer(QWidget):
         
         old_angle = self.rotation_angle
         self.rotation_angle = (self.rotation_angle - 90) % 360
-        self.logger.info("逆时针旋转90度", old_angle=old_angle, new_angle=self.rotation_angle)
+        self.logger.info("逆时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
         self.apply_rotation()
         self.update_rotation_label()
         # 启用保存按钮
@@ -863,7 +862,7 @@ class PhotoViewer(QWidget):
         
         old_angle = self.rotation_angle
         self.rotation_angle = (self.rotation_angle + 90) % 360
-        self.logger.info("顺时针旋转90度", old_angle=old_angle, new_angle=self.rotation_angle)
+        self.logger.info("顺时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
         self.apply_rotation()
         self.update_rotation_label()
         # 启用保存按钮
@@ -880,7 +879,7 @@ class PhotoViewer(QWidget):
         
         old_angle = self.rotation_angle
         self.rotation_angle = (self.rotation_angle + 180) % 360
-        self.logger.info("旋转180度", old_angle=old_angle, new_angle=self.rotation_angle)
+        self.logger.info("旋转180度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
         self.apply_rotation()
         self.update_rotation_label()
         # 启用保存按钮
@@ -910,9 +909,7 @@ class PhotoViewer(QWidget):
             self.logger.warning("无法更新显示：没有有效的图片")
             return
         
-        self.logger.info("开始更新显示", 
-                        rotation_angle=self.rotation_angle,
-                        original_size=f"{self.original_pixmap.width()}x{self.original_pixmap.height()}")
+        self.logger.info("开始更新显示: rotation_angle=%s, original_size=%s", self.rotation_angle, f"{self.original_pixmap.width()}x{self.original_pixmap.height()}")
         
         # 应用旋转（如果有的话）
         if self.rotation_angle != 0:
@@ -1146,7 +1143,7 @@ class PhotoViewer(QWidget):
                 self.exposure_mode_label.setText("曝光模式: -")
                 
         except Exception as e:
-            self.logger.error("Failed to update detailed info panel", error=str(e))
+            self.logger.error("Failed to update detailed info panel: %s", str(e))
     
     def update_tags_display(self, photo_data: dict):
         """更新分类标签显示"""
@@ -1169,17 +1166,17 @@ class PhotoViewer(QWidget):
                 self.category_tags_label.setText("分类标签: 无")
                 
         except Exception as e:
-            self.logger.error("Failed to update category tags display", error=str(e))
+            self.logger.error("Failed to update category tags display: %s", str(e))
             self.category_tags_label.setText("分类标签: 显示错误")
     
     def edit_category_tags(self):
-        """编辑分类标签"""
+        """编辑分类"""
         try:
             from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem
             
             # 创建分类标签编辑对话框
             dialog = QDialog(self)
-            dialog.setWindowTitle("编辑分类标签")
+            dialog.setWindowTitle("编辑分类")
             dialog.setMinimumWidth(400)
             dialog.setMinimumHeight(300)
             
@@ -1248,24 +1245,23 @@ class PhotoViewer(QWidget):
                                 {"tags": new_tags}
                             )
                             if success:
-                                self.logger.info("Category tags saved to database", 
-                                               photo_id=self.current_photo.get('id'), 
-                                               tags=new_tags)
+                                self.logger.info("Category tags saved to database: photo_id=%s, tags=%s", 
+                                               self.current_photo.get('id'), new_tags)
                                 # 发送更新信号
                                 self.photo_updated.emit(self.current_photo['id'])
                             else:
-                                self.logger.error("Failed to save category tags to database", 
-                                                photo_id=self.current_photo.get('id'))
+                                self.logger.error("Failed to save category tags to database: photo_id=%s", 
+                                                self.current_photo.get('id'))
                         else:
                             self.logger.error("Photo manager not available")
                     except Exception as e:
-                        self.logger.error("Failed to save category tags", error=str(e))
+                        self.logger.error("Failed to save category tags: %s", str(e))
                     
                     # 更新显示
                     self.update_tags_display(self.current_photo)
                     
         except Exception as e:
-            self.logger.error("Failed to edit category tags", error=str(e))
+            self.logger.error("Failed to edit category tags: %s", str(e))
     
     def add_common_tag(self, item):
         """添加常用标签到输入框"""
@@ -1278,7 +1274,7 @@ class PhotoViewer(QWidget):
                 new_text = tag
             self.tags_input.setText(new_text)
         except Exception as e:
-            self.logger.error("Failed to add common tag", error=str(e))
+            self.logger.error("Failed to add common tag: %s", str(e))
     
     def _query_location_info(self, photo_data: dict):
         """查询位置信息"""
@@ -1321,7 +1317,7 @@ class PhotoViewer(QWidget):
                 self.location_label.setText("位置: 查询失败")
                 
         except Exception as e:
-            self.logger.error("Failed to query location info", error=str(e))
+            self.logger.error("Failed to query location info: %s", str(e))
             self.location_label.setText("位置: 查询出错")
 
     def _convert_gps_coordinate(self, coord, ref):
@@ -1406,15 +1402,13 @@ class PhotoViewer(QWidget):
                 rotation_angle = orientation_rotations.get(orientation, 0)
                 if rotation_angle != 0:
                     pil_image = pil_image.rotate(rotation_angle, expand=True)
-                    self.logger.info("保存时处理EXIF方向", 
-                                   original_orientation=orientation,
+                    self.logger.info("保存时处理EXIF方向: original_orientation=%s", orientation,
                                    rotation_angle=rotation_angle)
             
             # 应用用户旋转角度（参照照片编辑器的实现）
             if self.rotation_angle != 0:
                 pil_image = pil_image.rotate(self.rotation_angle, expand=True)
-                self.logger.info("保存时应用用户旋转", 
-                               user_rotation_angle=self.rotation_angle)
+                self.logger.info("保存时应用用户旋转: user_rotation_angle=%s", self.rotation_angle)
             
             # 保存图片
             pil_image.save(save_path, quality=95)
@@ -1434,7 +1428,7 @@ class PhotoViewer(QWidget):
             QMessageBox.information(self, "成功", "图片旋转已保存")
             
         except Exception as e:
-            self.logger.error("Failed to save rotated image", error=str(e))
+            self.logger.error("Failed to save rotated image: %s", str(e))
             QMessageBox.critical(self, "错误", f"保存旋转图片失败：{str(e)}")
     
     def show_previous_photo(self):
@@ -1457,11 +1451,11 @@ class PhotoViewer(QWidget):
                 # 重新加载图片
                 self.display_photo(self.current_photo)
                 self.photo_updated.emit(self.current_photo['id'])
-                self.logger.info("Photo edited and saved", photo_id=self.current_photo['id'])
+                self.logger.info("Photo edited and saved: photo_id=%s", self.current_photo['id'])
         except ImportError as e:
-            self.logger.error("Failed to import photo editor", error=str(e))
+            self.logger.error("Failed to import photo editor: %s", str(e))
         except Exception as e:
-            self.logger.error("Failed to open photo editor", error=str(e))
+            self.logger.error("Failed to open photo editor: %s", str(e))
     
     def load_image_with_exif_orientation(self, file_path: str) -> QPixmap:
         """加载图片并处理EXIF方向信息 - 重新设计版本
@@ -1476,7 +1470,7 @@ class PhotoViewer(QWidget):
         try:
             # 检查缓存
             if hasattr(self, '_image_cache') and file_path in self._image_cache:
-                self.logger.info("使用缓存的图片", path=file_path)
+                self.logger.info("使用缓存的图片: path=%s", file_path)
                 return self._image_cache[file_path]
             
             from PIL import Image, ImageOps
@@ -1489,10 +1483,8 @@ class PhotoViewer(QWidget):
             exif = pil_image.getexif()
             orientation = exif.get(274)  # 274 是 Orientation 标签
             
-            self.logger.info("加载图片EXIF信息", 
-                           path=file_path, 
-                           orientation=orientation,
-                           original_size=f"{pil_image.width}x{pil_image.height}")
+            self.logger.info("加载图片EXIF信息: path=%s, orientation=%s, original_size=%s", 
+                           file_path, orientation, f"{pil_image.width}x{pil_image.height}")
             
             # 根据EXIF方向信息旋转图片到标准方向
             if orientation and orientation != 1:  # 1是正常方向，不需要处理
@@ -1513,10 +1505,8 @@ class PhotoViewer(QWidget):
                 if rotation_angle != 0:
                     # 旋转图片到标准方向
                     pil_image = pil_image.rotate(rotation_angle, expand=True)
-                    self.logger.info("应用EXIF方向旋转到标准方向", 
-                                   original_orientation=orientation,
-                                   rotation_angle=rotation_angle,
-                                   final_size=f"{pil_image.width}x{pil_image.height}")
+                    self.logger.info("应用EXIF方向旋转到标准方向: original_orientation=%s, rotation_angle=%s, final_size=%s", 
+                                   orientation, rotation_angle, f"{pil_image.width}x{pil_image.height}")
                 
                 # 处理翻转
                 if orientation in [2, 4, 5, 7]:
@@ -1524,7 +1514,7 @@ class PhotoViewer(QWidget):
                         pil_image = ImageOps.mirror(pil_image)
                     elif orientation in [5, 7]:  # 需要先旋转再翻转
                         pil_image = ImageOps.mirror(pil_image)
-                    self.logger.info("应用EXIF翻转", orientation=orientation)
+                    self.logger.info("应用EXIF翻转: orientation=%s", orientation)
             
             # 优化：对于大图片，先压缩以提高性能
             max_size = 2048
@@ -1534,9 +1524,8 @@ class PhotoViewer(QWidget):
                 new_width = int(pil_image.width * ratio)
                 new_height = int(pil_image.height * ratio)
                 pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                self.logger.info("压缩大图片以提高性能", 
-                               original_size=f"{pil_image.width}x{pil_image.height}",
-                               compressed_size=f"{new_width}x{new_height}")
+                self.logger.info("压缩大图片以提高性能: original_size=%s, compressed_size=%s", 
+                               f"{pil_image.width}x{pil_image.height}", f"{new_width}x{new_height}")
             
             # 转换回QPixmap
             buffer = io.BytesIO()
@@ -1557,13 +1546,13 @@ class PhotoViewer(QWidget):
                 oldest_key = next(iter(self._image_cache))
                 del self._image_cache[oldest_key]
             
-            self.logger.info("图片加载完成，已处理EXIF方向", 
-                           final_size=f"{pixmap.width()}x{pixmap.height()}")
+            self.logger.info("图片加载完成，已处理EXIF方向: final_size=%s", 
+                           f"{pixmap.width()}x{pixmap.height()}")
             
             return pixmap
             
         except Exception as e:
-            self.logger.error("处理EXIF方向失败，使用原始加载方式", 
-                            path=file_path, error=str(e))
+            self.logger.error("处理EXIF方向失败，使用原始加载方式: path=%s, error=%s", 
+                            file_path, str(e))
             # 如果处理失败，回退到原始加载方式
             return QPixmap(file_path)

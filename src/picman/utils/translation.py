@@ -3,11 +3,16 @@ Translation utilities for PyPhotoManager.
 Provides internationalization support.
 """
 
-from typing import Dict, Any, Optional
-import json
 import os
+import json
+import logging
 from pathlib import Path
-import structlog
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class TranslationManager:
@@ -15,7 +20,7 @@ class TranslationManager:
     
     def __init__(self, config=None):
         self.config = config
-        self.logger = structlog.get_logger("picman.utils.translation")
+        self.logger = logger
         self.translations = {}
         self.current_language = "en"  # Default language
         
@@ -43,18 +48,16 @@ class TranslationManager:
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         self.translations[language_code] = json.load(f)
-                    self.logger.info(f"Loaded translation", language=language_code)
+                    self.logger.info(f"Loaded translation for language: {language_code}")
                 except Exception as e:
-                    self.logger.error(f"Failed to load translation", 
-                                    language=language_code, 
-                                    error=str(e))
+                    self.logger.error(f"Failed to load translation for language {language_code}: {str(e)}")
             
             # If no translations were loaded, create default ones
             if not self.translations:
                 self._create_default_translations(translations_dir)
                 
         except Exception as e:
-            self.logger.error("Failed to load translations", error=str(e))
+            self.logger.error(f"Failed to load translations: {str(e)}")
             # Ensure we at least have English
             if "en" not in self.translations:
                 self.translations["en"] = {}
@@ -236,7 +239,7 @@ class TranslationManager:
         self.translations["en"] = en_translations
         self.translations["zh"] = zh_translations
         
-        self.logger.info("Created default translations", languages=["en", "zh"])
+        self.logger.info("Created default translations for languages: en, zh")
     
     def set_language(self, language_code: str) -> bool:
         """Set the current language."""
@@ -244,12 +247,10 @@ class TranslationManager:
             self.current_language = language_code
             if self.config:
                 self.config.set("ui.language", language_code)
-            self.logger.info("Language changed", language=language_code)
+            self.logger.info(f"Language changed to: {language_code}")
             return True
         else:
-            self.logger.warning("Language not available", 
-                              requested=language_code, 
-                              available=list(self.translations.keys()))
+            self.logger.warning(f"Language not available: {language_code}, available: {list(self.translations.keys())}")
             return False
     
     def get_available_languages(self) -> Dict[str, str]:
@@ -288,10 +289,7 @@ class TranslationManager:
             try:
                 translation = translation.format(*args)
             except Exception as e:
-                self.logger.error("Error formatting translation", 
-                                key=key, 
-                                args=args, 
-                                error=str(e))
+                self.logger.error(f"Error formatting translation key '{key}' with args {args}: {str(e)}")
         
         return translation
     

@@ -7,8 +7,8 @@ Google翻译插件主文件
 import json
 import time
 import random
+import logging
 from typing import Dict, List, Optional, Any
-import structlog
 import sys
 import os
 from pathlib import Path
@@ -38,7 +38,16 @@ try:
 except ImportError:
     GOOGLETRANS_AVAILABLE = False
 
-logger = structlog.get_logger(__name__)
+# 配置标准logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('google_translate_plugin.log', encoding='utf-8')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 class GoogleTranslatePlugin(Plugin):
@@ -75,7 +84,7 @@ class GoogleTranslatePlugin(Plugin):
                 self.translator = Translator()
                 self.logger.info("Google Translate plugin initialized with googletrans")
             except Exception as e:
-                self.logger.error("Failed to initialize googletrans translator", error=str(e))
+                self.logger.error(f"Failed to initialize googletrans translator: {e}")
                 self.translator = None
         else:
             self.logger.warning("googletrans library not available")
@@ -115,7 +124,7 @@ class GoogleTranslatePlugin(Plugin):
             return True
             
         except Exception as e:
-            self.logger.error("Failed to initialize Google Translate plugin", error=str(e))
+            self.logger.error(f"Failed to initialize Google Translate plugin: {e}")
             return False
     
     def shutdown(self) -> bool:
@@ -125,7 +134,7 @@ class GoogleTranslatePlugin(Plugin):
             self.logger.info("Google Translate plugin shutdown")
             return True
         except Exception as e:
-            self.logger.error("Failed to shutdown Google Translate plugin", error=str(e))
+            self.logger.error(f"Failed to shutdown Google Translate plugin: {e}")
             return False
     
     def get_config_schema(self) -> Dict[str, any]:
@@ -229,13 +238,13 @@ class GoogleTranslatePlugin(Plugin):
                         translation = result.text
                         # 缓存结果
                         self.translation_cache[text] = translation
-                        self.logger.debug("Translation successful", text=text, translation=translation)
+                        self.logger.debug(f"Translation successful: '{text}' -> '{translation}'")
                         return translation
                     
                     return None
                     
                 except Exception as e:
-                    self.logger.warning(f"Translation attempt {attempt + 1} failed", text=text, error=str(e))
+                    self.logger.warning(f"Translation attempt {attempt + 1} failed for text '{text}': {e}")
                     
                     if attempt < self.max_retries - 1:
                         # 指数退避延迟
@@ -248,13 +257,13 @@ class GoogleTranslatePlugin(Plugin):
                         except Exception:
                             pass
                     else:
-                        self.logger.error("Translation failed after all retries", text=text, error=str(e))
+                        self.logger.error(f"Translation failed after all retries for text '{text}': {e}")
                         return None
             
             return None
             
         except Exception as e:
-            self.logger.error("Translation failed", text=text, error=str(e))
+            self.logger.error(f"Translation failed for text '{text}': {e}")
             return None
     
     def translate_tags(self, tags: List[str]) -> Dict[str, str]:
@@ -287,14 +296,11 @@ class GoogleTranslatePlugin(Plugin):
                         self.logger.info(f"翻译进度: {i + 1}/{len(tags)}")
                         
                 except Exception as e:
-                    self.logger.error(f"翻译标签时出错: {tag}", error=str(e))
+                    self.logger.error(f"翻译标签时出错: {tag} - {e}")
                     translations[tag] = tag
                     failed_tags.append(tag)
             
-            self.logger.info("Tags translated", 
-                           count=len(tags), 
-                           translated_count=len(translations) - len(failed_tags),
-                           failed_count=len(failed_tags))
+            self.logger.info(f"Tags translated: {len(tags)} total, {len(translations) - len(failed_tags)} successful, {len(failed_tags)} failed")
             
             if failed_tags:
                 self.logger.warning(f"翻译失败的标签: {failed_tags}")
@@ -302,7 +308,7 @@ class GoogleTranslatePlugin(Plugin):
             return translations
             
         except Exception as e:
-            self.logger.error("Failed to translate tags", error=str(e))
+            self.logger.error(f"Failed to translate tags: {e}")
             # 返回原标签作为翻译
             return {tag: tag for tag in tags}
     
@@ -332,7 +338,7 @@ class GoogleTranslatePlugin(Plugin):
             return True
             
         except Exception as e:
-            self.logger.error("显示翻译对话框失败", error=str(e))
+            self.logger.error(f"显示翻译对话框失败: {e}")
             return False
     
     def get_menu_actions(self) -> List[Dict[str, Any]]:
@@ -386,5 +392,5 @@ class GoogleTranslatePlugin(Plugin):
                 self.request_interval = settings["request_interval"]
             return True
         except Exception as e:
-            self.logger.error("Failed to update settings", error=str(e))
+            self.logger.error(f"Failed to update settings: {e}")
             return False 

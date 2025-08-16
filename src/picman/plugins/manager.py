@@ -151,9 +151,10 @@ class PluginManager:
                 # Create module name that includes directory
                 module_name = f"{dir_path.name}.{file_path.stem}"
                 
-                # Add directory to Python path temporarily
+                # Add directory and parent to Python path temporarily
                 original_path = sys.path.copy()
-                sys.path.insert(0, str(dir_path.parent))
+                sys.path.insert(0, str(dir_path))  # Add plugin directory
+                sys.path.insert(0, str(dir_path.parent))  # Add parent directory
                 
                 try:
                     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -161,6 +162,7 @@ class PluginManager:
                         continue
                     
                     module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module  # Add module to sys.modules
                     spec.loader.exec_module(module)
                     
                     # Find plugin classes
@@ -199,6 +201,9 @@ class PluginManager:
                 finally:
                     # Restore original path
                     sys.path = original_path
+                    # Clean up sys.modules
+                    if module_name in sys.modules:
+                        del sys.modules[module_name]
                     
             except Exception as e:
                 self.logger.error(f"Failed to load plugin from directory - path: {file_path}, error: {str(e)}")
@@ -274,20 +279,26 @@ class PluginManager:
         try:
             if plugin_name not in self.plugins:
                 self.logger.warning(f"Plugin not loaded - name: {plugin_name}")
-                return False
+                return True  # 插件未加载不算错误
             
             # Shutdown plugin
             plugin = self.plugins[plugin_name]
-            if plugin.shutdown():
+            try:
+                shutdown_result = plugin.shutdown()
                 del self.plugins[plugin_name]
                 self.logger.info(f"Plugin unloaded - name: {plugin_name}")
                 return True
-            else:
-                self.logger.error(f"Plugin shutdown failed - name: {plugin_name}")
-                return False
+            except Exception as e:
+                # 即使shutdown失败，也要从插件列表中移除
+                del self.plugins[plugin_name]
+                self.logger.warning(f"Plugin shutdown had issues - name: {plugin_name}, error: {str(e)}")
+                return True  # 仍然认为卸载成功
             
         except Exception as e:
             self.logger.error(f"Failed to unload plugin - name: {plugin_name}, error: {str(e)}")
+            # 确保插件从列表中移除
+            if plugin_name in self.plugins:
+                del self.plugins[plugin_name]
             return False
     
     def unload_all_plugins(self) -> bool:

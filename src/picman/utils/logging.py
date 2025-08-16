@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-import structlog
+# import structlog  # 已移除，使用标准logging
 import sys
 import os
 import json
@@ -171,41 +171,39 @@ class LoggingManager:
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
         
-        # Setup structlog with appropriate processors based on format
-        processors = [
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-        ]
+        # 使用标准logging配置，移除structlog依赖
+        # 配置根日志记录器
+        root_logger = logging.getLogger()
+        root_logger.setLevel(self.log_level.value)
         
-        # Add renderer based on format
-        if self.log_format == LogFormat.JSON:
-            processors.append(structlog.processors.JSONRenderer(ensure_ascii=False))
-        else:
-            # Use a simple string renderer for better Chinese character support
-            processors.append(structlog.processors.format_exc_info)
-            processors.append(structlog.processors.UnicodeDecoder())
-            processors.append(structlog.dev.ConsoleRenderer(colors=(self.log_format == LogFormat.COLORED)))
+        # 清除现有处理器
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
         
-        structlog.configure(
-            processors=processors,
-            context_class=dict,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True
-        )
+        # 添加控制台处理器
+        if self.console_enabled:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(self.log_level.value)
+            
+            if self.log_format == LogFormat.COLORED:
+                # 简单的彩色输出格式
+                console_formatter = logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                )
+            else:
+                console_formatter = logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                )
+            
+            console_handler.setFormatter(console_formatter)
+            root_logger.addHandler(console_handler)
         
-        self.logger = structlog.get_logger("picman")
+        self.logger = logging.getLogger("picman")
         return self.logger
     
-    def get_logger(self, name: str = "picman") -> structlog.BoundLogger:
+    def get_logger(self, name: str = "picman") -> logging.Logger:
         """Get a logger instance."""
-        return structlog.get_logger(name)
+        return logging.getLogger(name)
     
     def set_level(self, level: str) -> None:
         """Set the log level."""

@@ -356,7 +356,7 @@ class PluginManagerDialog(QDialog):
                 # Delete plugin file
                 if plugin_path and os.path.exists(plugin_path):
                     os.remove(plugin_path)
-                    self.logger.info("Plugin file removed", path=plugin_path)
+                    self.logger.info("Plugin file removed: %s", plugin_path)
                 
                 # Refresh plugin list
                 self.load_plugins()
@@ -365,8 +365,7 @@ class PluginManagerDialog(QDialog):
                                       f"Plugin '{plugin_name}' has been removed.")
                 
             except Exception as e:
-                self.logger.error("Failed to remove plugin", 
-                                name=plugin_name, error=str(e))
+                self.logger.error("Failed to remove plugin: name=%s, error=%s", plugin_name, str(e))
                 QMessageBox.critical(self, "Error", 
                                    f"Failed to remove plugin: {str(e)}")
     
@@ -396,8 +395,7 @@ class PluginManagerDialog(QDialog):
             dest_path = os.path.join(plugin_dir, os.path.basename(file_path))
             shutil.copy2(file_path, dest_path)
             
-            self.logger.info("Plugin installed", 
-                           source=file_path, 
+            self.logger.info("Plugin installed: source=%s", file_path, 
                            destination=dest_path)
             
             # Refresh plugin list
@@ -411,8 +409,7 @@ class PluginManagerDialog(QDialog):
             self.install_file_btn.setEnabled(False)
             
         except Exception as e:
-            self.logger.error("Failed to install plugin", 
-                            file=file_path, error=str(e))
+            self.logger.error("Failed to install plugin: file=%s, error=%s", file_path, str(e))
             QMessageBox.critical(self, "Installation Error", 
                                f"Failed to install plugin: {str(e)}")
     
@@ -443,9 +440,7 @@ class PluginManagerDialog(QDialog):
         sandbox_enabled = self.sandbox_cb.isChecked()
         self.plugin_manager.config.set("plugins.sandbox_enabled", sandbox_enabled)
         
-        self.logger.info("Plugin settings updated", 
-                       auto_load=auto_load, 
-                       sandbox_enabled=sandbox_enabled)
+        self.logger.info("Plugin settings updated: auto_load=%s, sandbox_enabled=%s", auto_load, sandbox_enabled)
     
     def update_button_states(self):
         """Update button states based on selection."""

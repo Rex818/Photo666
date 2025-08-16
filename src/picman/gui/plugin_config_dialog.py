@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 import json
-import structlog
+import logging
 from pathlib import Path
 
 
@@ -19,7 +19,7 @@ class PluginConfigDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.logger = structlog.get_logger("picman.gui.plugin_config")
+        self.logger = logging.getLogger("picman.gui.plugin_config")
         self.config_file = Path("config/plugins/google_translate_plugin.json")
         self.config = self.load_config()
         
@@ -172,7 +172,7 @@ class PluginConfigDialog(QDialog):
                 self.save_config_file(default_config)
                 return default_config
         except Exception as e:
-            self.logger.error("Failed to load config", error=str(e))
+            self.logger.error("Failed to load config: %s", str(e))
             return {}
     
     def save_config_file(self, config: dict):
@@ -182,7 +182,7 @@ class PluginConfigDialog(QDialog):
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            self.logger.error("Failed to save config", error=str(e))
+            self.logger.error("Failed to save config: %s", str(e))
     
     def load_config_to_ui(self):
         """将配置加载到UI"""
@@ -207,7 +207,7 @@ class PluginConfigDialog(QDialog):
                     break
                 
         except Exception as e:
-            self.logger.error("Failed to load config to UI", error=str(e))
+            self.logger.error("Failed to load config to UI: %s", str(e))
     
     def save_config(self):
         """保存配置"""
@@ -231,7 +231,7 @@ class PluginConfigDialog(QDialog):
             self.accept()
             
         except Exception as e:
-            self.logger.error("Failed to save config", error=str(e))
+            self.logger.error("Failed to save config: %s", str(e))
             QMessageBox.critical(self, "保存失败", f"保存配置失败：{str(e)}")
     
     def test_connection(self):
@@ -256,5 +256,5 @@ class PluginConfigDialog(QDialog):
                 QMessageBox.critical(self, "测试失败", f"翻译测试失败：{str(e)}")
                 
         except Exception as e:
-            self.logger.error("Translation test failed", error=str(e))
+            self.logger.error("Translation test failed: %s", str(e))
             QMessageBox.critical(self, "测试失败", f"测试失败：{str(e)}") 

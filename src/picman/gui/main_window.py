@@ -2,7 +2,9 @@
 Main application window for PyPhotoManager.
 """
 
+import os
 import sys
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from PyQt6.QtWidgets import (
@@ -14,8 +16,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QDate, QByteArray
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
-import structlog
-from datetime import datetime
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from ..config.manager import ConfigManager
 from ..database.manager import DatabaseManager
@@ -25,6 +29,8 @@ from ..utils.logging import LoggingManager
 from ..utils.language_manager import LanguageManager
 from ..plugins.manager import PluginManager
 from .photo_viewer import PhotoViewer
+from .janus_generate_page import JanusGeneratePage
+
 from .thumbnail_widget import ThumbnailWidget
 from .album_manager import AlbumManager
 from .tag_manager import TagManager
@@ -85,6 +91,136 @@ class ImportWorkerWithTags(QThread):
             self.error.emit(str(e))
 
 
+class OptimizedImportWorker(QThread):
+    """高性能导入工作线程，使用多线程和批量操作。"""
+    
+    progress = pyqtSignal(str)  # 进度信息
+    finished = pyqtSignal(dict)  # 结果
+    error = pyqtSignal(str)
+    
+    def __init__(self, photo_manager: PhotoManager, directory: str, recursive: bool = True, 
+                 album_id: Optional[int] = None, tag_settings: Optional[dict] = None,
+                 max_workers: int = 4, batch_size: int = 50):
+        super().__init__()
+        self.photo_manager = photo_manager
+        self.directory = directory
+        self.recursive = recursive
+        self.album_id = album_id
+        self.tag_settings = tag_settings or {}
+        self.max_workers = max_workers
+        self.batch_size = batch_size
+    
+    def run(self):
+        try:
+            self.progress.emit("开始扫描目录...")
+            
+            # 使用高性能导入方法
+            result = self.photo_manager.import_directory_optimized(
+                self.directory,
+                self.recursive,
+                self.album_id,
+                self.tag_settings,
+                self.max_workers,
+                self.batch_size
+            )
+            
+            self.finished.emit(result)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ImportConfigDialog(QDialog):
+    """导入配置对话框，用于设置高性能导入参数。"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("导入配置")
+        self.setModal(True)
+        self.resize(400, 300)
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # 性能设置组
+        performance_group = QGroupBox("性能设置")
+        performance_layout = QVBoxLayout()
+        
+        # 线程数设置
+        thread_layout = QHBoxLayout()
+        thread_layout.addWidget(QLabel("工作线程数:"))
+        self.thread_spinbox = QSpinBox()
+        self.thread_spinbox.setRange(1, 16)
+        self.thread_spinbox.setValue(4)
+        self.thread_spinbox.setToolTip("增加线程数可以提高处理速度，但会占用更多内存")
+        thread_layout.addWidget(self.thread_spinbox)
+        thread_layout.addStretch()
+        performance_layout.addLayout(thread_layout)
+        
+        # 批量大小设置
+        batch_layout = QHBoxLayout()
+        batch_layout.addWidget(QLabel("批量处理大小:"))
+        self.batch_spinbox = QSpinBox()
+        self.batch_spinbox.setRange(10, 200)
+        self.batch_spinbox.setValue(50)
+        self.batch_spinbox.setToolTip("每批处理的文件数量，较大的批量可以提高数据库操作效率")
+        batch_layout.addWidget(self.batch_spinbox)
+        batch_layout.addStretch()
+        performance_layout.addLayout(batch_layout)
+        
+        performance_group.setLayout(performance_layout)
+        layout.addWidget(performance_group)
+        
+        # 标签设置组
+        tag_group = QGroupBox("标签设置")
+        tag_layout = QVBoxLayout()
+        
+        self.import_tags_checkbox = QCheckBox("导入标签文件")
+        self.import_tags_checkbox.setToolTip("自动查找并导入与图片同名的标签文件")
+        tag_layout.addWidget(self.import_tags_checkbox)
+        
+        self.translate_tags_checkbox = QCheckBox("自动翻译标签")
+        self.translate_tags_checkbox.setToolTip("使用Google翻译插件自动翻译标签")
+        self.translate_tags_checkbox.setEnabled(False)  # 暂时禁用
+        tag_layout.addWidget(self.translate_tags_checkbox)
+        
+        self.clear_existing_tags_checkbox = QCheckBox("清空已存在照片的标签")
+        self.clear_existing_tags_checkbox.setToolTip("导入时清空已存在照片的所有标签信息")
+        tag_layout.addWidget(self.clear_existing_tags_checkbox)
+        
+        tag_group.setLayout(tag_layout)
+        layout.addWidget(tag_group)
+        
+        # 按钮
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.ok_button = QPushButton("确定")
+        self.ok_button.clicked.connect(self.accept)
+        
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_settings(self) -> dict:
+        """获取导入设置。"""
+        return {
+            "max_workers": self.thread_spinbox.value(),
+            "batch_size": self.batch_spinbox.value(),
+            "import_tags": self.import_tags_checkbox.isChecked(),
+            "translate_tags": self.translate_tags_checkbox.isChecked(),
+            "clear_existing_tags": self.clear_existing_tags_checkbox.isChecked()
+        }
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -117,7 +253,8 @@ class MainWindow(QMainWindow):
         self.plugin_manager.set_app_context({
             "config_manager": self.config_manager,
             "photo_manager": self.photo_manager,
-            "image_processor": self.image_processor
+            "image_processor": self.image_processor,
+            "database": self.db_manager  # 添加数据库管理器到插件上下文
         })
         self.plugin_manager.load_plugins()
         
@@ -176,15 +313,10 @@ class MainWindow(QMainWindow):
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.main_splitter)
         
-        # Create central area for photo display (empty initially)
-        central_placeholder = QWidget()
-        central_placeholder.setStyleSheet("background-color: #f0f0f0; border: 2px dashed #ccc;")
-        central_label = QLabel("请选择相册或进行搜索以查看照片")
-        central_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        central_label.setStyleSheet("font-size: 16px; color: #666;")
-        central_layout = QVBoxLayout(central_placeholder)
-        central_layout.addWidget(central_label)
-        self.main_splitter.addWidget(central_placeholder)
+        # Create central area for photo display with thumbnail widget
+        self.thumbnail_widget = ThumbnailWidget()
+        self.thumbnail_widget.photo_selected.connect(self.on_photo_selected)
+        self.main_splitter.addWidget(self.thumbnail_widget)
         
         # Set splitter proportions
         self.main_splitter.setSizes([800])
@@ -231,7 +363,8 @@ class MainWindow(QMainWindow):
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("关键词:"))
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("输入搜索关键词...")
+        self.search_box.setPlaceholderText("输入搜索关键词... (支持单词、词组、引号精确匹配)")
+        self.search_box.setToolTip("搜索提示：\n• 输入单词或词组进行搜索\n• 用逗号或分号分隔多个关键词\n• 用引号包围精确词组，如 \"美丽风景\"\n• 支持中英文标签、文件名、备注等")
         self.search_box.returnPressed.connect(self.search_photos)
         search_layout.addWidget(self.search_box)
         
@@ -252,11 +385,17 @@ class MainWindow(QMainWindow):
         row1_layout = QHBoxLayout()
         
         # 评分筛选
-        row1_layout.addWidget(QLabel("评分:"))
+        self.rating_enabled = QCheckBox("评分")
+        self.rating_enabled.setChecked(False)
+        self.rating_enabled.stateChanged.connect(self.on_rating_enabled_changed)
+        row1_layout.addWidget(self.rating_enabled)
+        
+        row1_layout.addWidget(QLabel(":"))
         self.rating_filter = QSpinBox()
         self.rating_filter.setRange(0, 5)
         self.rating_filter.setValue(0)
         self.rating_filter.setMaximumWidth(60)
+        self.rating_filter.setEnabled(False)
         self.rating_filter.valueChanged.connect(self.search_photos)
         row1_layout.addWidget(self.rating_filter)
         
@@ -282,12 +421,17 @@ class MainWindow(QMainWindow):
         row2_layout = QHBoxLayout()
         
         # 尺寸筛选
-        row2_layout.addWidget(QLabel("最小尺寸:"))
+        self.min_width_enabled = QCheckBox("最小尺寸")
+        self.min_width_enabled.setChecked(False)
+        self.min_width_enabled.stateChanged.connect(self.on_min_width_enabled_changed)
+        row2_layout.addWidget(self.min_width_enabled)
+        
         self.min_width = QSpinBox()
         self.min_width.setRange(0, 10000)
         self.min_width.setValue(0)
         self.min_width.setSuffix(" px")
         self.min_width.setMaximumWidth(80)
+        self.min_width.setEnabled(False)
         self.min_width.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_width)
         
@@ -297,16 +441,22 @@ class MainWindow(QMainWindow):
         self.min_height.setValue(0)
         self.min_height.setSuffix(" px")
         self.min_height.setMaximumWidth(80)
+        self.min_height.setEnabled(False)
         self.min_height.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_height)
         
         # 文件大小筛选
-        row2_layout.addWidget(QLabel("大小:"))
+        self.min_size_enabled = QCheckBox("大小")
+        self.min_size_enabled.setChecked(False)
+        self.min_size_enabled.stateChanged.connect(self.on_min_size_enabled_changed)
+        row2_layout.addWidget(self.min_size_enabled)
+        
         self.min_size = QSpinBox()
         self.min_size.setRange(0, 1000000)
         self.min_size.setValue(0)
         self.min_size.setSuffix(" KB")
         self.min_size.setMaximumWidth(80)
+        self.min_size.setEnabled(False)
         self.min_size.valueChanged.connect(self.search_photos)
         row2_layout.addWidget(self.min_size)
         
@@ -317,19 +467,29 @@ class MainWindow(QMainWindow):
         row3_layout = QHBoxLayout()
         
         # 相机品牌
-        row3_layout.addWidget(QLabel("相机:"))
+        self.camera_filter_enabled = QCheckBox("相机")
+        self.camera_filter_enabled.setChecked(False)
+        self.camera_filter_enabled.stateChanged.connect(self.on_camera_filter_enabled_changed)
+        row3_layout.addWidget(self.camera_filter_enabled)
+        
         self.camera_filter = QLineEdit()
         self.camera_filter.setPlaceholderText("相机品牌")
         self.camera_filter.setMaximumWidth(120)
+        self.camera_filter.setEnabled(False)
         self.camera_filter.textChanged.connect(self.search_photos)
         row3_layout.addWidget(self.camera_filter)
         
         # 拍摄日期范围
-        row3_layout.addWidget(QLabel("日期:"))
+        self.date_enabled = QCheckBox("日期")
+        self.date_enabled.setChecked(False)
+        self.date_enabled.stateChanged.connect(self.on_date_enabled_changed)
+        row3_layout.addWidget(self.date_enabled)
+        
         self.date_from = QDateEdit()
         self.date_from.setCalendarPopup(True)
         self.date_from.setDate(QDate.currentDate().addDays(-365))
         self.date_from.setMaximumWidth(100)
+        self.date_from.setEnabled(False)
         self.date_from.dateChanged.connect(self.search_photos)
         row3_layout.addWidget(self.date_from)
         
@@ -338,6 +498,7 @@ class MainWindow(QMainWindow):
         self.date_to.setCalendarPopup(True)
         self.date_to.setDate(QDate.currentDate())
         self.date_to.setMaximumWidth(100)
+        self.date_to.setEnabled(False)
         self.date_to.dateChanged.connect(self.search_photos)
         row3_layout.addWidget(self.date_to)
         
@@ -383,15 +544,70 @@ class MainWindow(QMainWindow):
         return widget
     
     def create_photo_display_dock_widget(self) -> QWidget:
-        """Create the photo display dock widget with photo viewer only."""
+        """Create the photo display dock widget with stacked pages.
+
+        - 图片显示页（保持原有 PhotoViewer 功能不变）
+        - Janus 生图页（与图片显示页位于同一区域，可层叠切换）
+        """
+        from PyQt6.QtWidgets import QStackedWidget, QToolBar
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        
-        # Main photo viewer (主图片显示区域)
+
+        # 顶部工具条：用于在两个页面间切换
+        toolbar = QToolBar()
+        self.action_show_photo_view = QAction(self.get_text("Photo", "图片显示页"), self)
+        self.action_show_janus = QAction(self.get_text("Janus Generate", "Janus生图"), self)
+        toolbar.addAction(self.action_show_photo_view)
+        toolbar.addAction(self.action_show_janus)
+        layout.addWidget(toolbar)
+
+        # 堆叠容器
+        self.photo_area_stack = QStackedWidget()
+
+        # 页面1：图片显示页
         self.photo_viewer = PhotoViewer()
-        layout.addWidget(self.photo_viewer)
-        
+        self.photo_area_stack.addWidget(self.photo_viewer)
+
+        # 页面2：Janus 生图页
+        self.janus_generate_page = JanusGeneratePage()
+        # 连接生图请求信号到处理函数（占位实现）
+        self.janus_generate_page.request_generate.connect(self.on_janus_generate_requested)
+        self.photo_area_stack.addWidget(self.janus_generate_page)
+
+        layout.addWidget(self.photo_area_stack, 1)
+
+        # 切换逻辑
+        self.action_show_photo_view.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(0))
+        self.action_show_janus.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(1))
+
         return widget
+
+    def on_janus_generate_requested(self, payload: dict):
+        """处理 Janus 生图请求 - 调用独立插件"""
+        try:
+            # 获取 Janus 文生图插件 - 使用字典结构
+            plugin = None
+            for plugin_name, plugin_obj in self.plugin_manager.plugins.items():
+                try:
+                    if hasattr(plugin_obj, 'get_info') and plugin_obj.get_info().name == "Janus文生图":
+                        plugin = plugin_obj
+                        break
+                except Exception:
+                    continue
+            
+            if plugin is None:
+                QMessageBox.warning(self, "错误", "Janus文生图插件未加载")
+                return
+            
+            # 调用插件的生成方法
+            if hasattr(plugin, 'generate_from_main_window'):
+                plugin.generate_from_main_window(payload, self.janus_generate_page)
+            else:
+                QMessageBox.warning(self, "错误", "插件不支持主窗口调用")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Janus", f"调用插件失败: {e}")
     
 
     
@@ -457,9 +673,9 @@ class MainWindow(QMainWindow):
         self.photo_display_dock.setMinimumWidth(300)
         self.photo_display_dock.resize(400, self.height())
         
-        # 标签面板 - 右侧，占20%宽度
-        self.tags_dock.setMinimumWidth(200)
-        self.tags_dock.resize(250, self.height())
+        # 标签面板 - 右侧，占20%宽度，增加最小宽度确保内容完整显示
+        self.tags_dock.setMinimumWidth(300)  # 从200增加到300
+        self.tags_dock.resize(350, self.height())  # 从250增加到350
         
         # 设置面板的关闭按钮可见，允许用户临时关闭不需要的面板
         self.albums_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
@@ -534,13 +750,13 @@ class MainWindow(QMainWindow):
             self.logger.info("Layout saved successfully")
             
         except Exception as e:
-            self.logger.error("Failed to save layout", error=str(e))
+            self.logger.error("Failed to save layout: %s", str(e))
     
     def restore_layout(self):
         """从配置文件恢复面板布局."""
         try:
             layout_data = self.config_manager.get('ui.layout', {})
-            self.logger.info("Attempting to restore layout", layout_data=layout_data)
+            self.logger.info("Attempting to restore layout: %s", layout_data)
             
             if not layout_data:
                 self.logger.info("No saved layout found, using default")
@@ -550,7 +766,7 @@ class MainWindow(QMainWindow):
             if 'window_geometry' in layout_data:
                 geo = layout_data['window_geometry']
                 self.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
-                self.logger.info("Window geometry restored", geometry=geo)
+                self.logger.info("Window geometry restored: %s", geo)
             
             # 恢复窗口状态（包括停靠面板位置）
             if 'window_state' in layout_data:
@@ -574,7 +790,7 @@ class MainWindow(QMainWindow):
                 if 'tags' in panels:
                     self.tags_dock.setVisible(panels['tags'])
                     self.tags_panel_action.setChecked(panels['tags'])
-                self.logger.info("Panel visibility restored", panels=panels)
+                self.logger.info("Panel visibility restored: %s", panels)
             
             # 恢复浮动面板的位置和大小
             if 'panels_floating' in layout_data and 'panels_geometry' in layout_data:
@@ -602,12 +818,12 @@ class MainWindow(QMainWindow):
                     geo = geometry['tags']
                     self.tags_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
                 
-                self.logger.info("Floating panels restored", floating=floating)
+                self.logger.info("Floating panels restored: %s", floating)
             
             self.logger.info("Layout restored successfully")
             
         except Exception as e:
-            self.logger.error("Failed to restore layout", error=str(e))
+            self.logger.error("Failed to restore layout: %s", str(e))
     
     def reset_layout(self):
         """重置面板布局到默认状态."""
@@ -634,7 +850,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "布局重置", "面板布局已重置为默认状态。")
             
         except Exception as e:
-            self.logger.error("Failed to reset layout", error=str(e))
+            self.logger.error("Failed to reset layout: %s", str(e))
     
     def create_menu_bar(self):
         """Create the menu bar."""
@@ -652,6 +868,18 @@ class MainWindow(QMainWindow):
         import_folder_action = QAction(self.get_text("Import Folder", "导入文件夹"), self)
         import_folder_action.triggered.connect(self.import_folder)
         file_menu.addAction(import_folder_action)
+        
+        # 添加高性能导入选项
+        import_optimized_action = QAction(self.get_text("Import Folder (Optimized)", "导入文件夹 (高性能)"), self)
+        import_optimized_action.setToolTip("使用多线程和批量操作进行高性能导入")
+        import_optimized_action.triggered.connect(self.import_folder_optimized)
+        file_menu.addAction(import_optimized_action)
+        
+        # 添加多文件夹导入选项
+        import_multi_folders_action = QAction(self.get_text("Import Multiple Folders", "导入多个文件夹"), self)
+        import_multi_folders_action.setToolTip("一次选择多个文件夹进行批量导入")
+        import_multi_folders_action.triggered.connect(self.import_multiple_folders)
+        file_menu.addAction(import_multi_folders_action)
         
         file_menu.addSeparator()
         
@@ -822,6 +1050,12 @@ class MainWindow(QMainWindow):
         import_folder_action.triggered.connect(self.import_folder)
         toolbar.addAction(import_folder_action)
         
+        # 添加多文件夹导入按钮
+        import_multi_folders_action = QAction(self.get_text("Import Multiple Folders", "多文件夹导入"), self)
+        import_multi_folders_action.setToolTip("一次选择多个文件夹进行批量导入")
+        import_multi_folders_action.triggered.connect(self.import_multiple_folders)
+        toolbar.addAction(import_multi_folders_action)
+        
         toolbar.addSeparator()
         
         # View mode combo
@@ -905,7 +1139,7 @@ class MainWindow(QMainWindow):
     
     def on_photo_selected(self, photo_id: int):
         """Handle photo selection."""
-        self.logger.info("Photo selected", photo_id=photo_id)
+        self.logger.info("Photo selected: photo_id=%d", photo_id)
         
         # 获取照片详细信息
         photo_data = self.photo_manager.get_photo_info(photo_id)
@@ -919,7 +1153,7 @@ class MainWindow(QMainWindow):
             # 更新标签面板
             self.update_tags_for_photo(photo_id)
         else:
-            self.logger.warning("Photo data not found or photo viewer not available", photo_id=photo_id)
+            self.logger.warning("Photo data not found or photo viewer not available: photo_id=%d", photo_id)
     
     def load_settings(self):
         """Load application settings."""
@@ -977,7 +1211,134 @@ class MainWindow(QMainWindow):
         )
         
         if directory:
-            self.import_directory(directory)
+            # 显示导入配置对话框
+            config_dialog = ImportConfigDialog(self)
+            if config_dialog.exec() == QDialog.DialogCode.Accepted:
+                settings = config_dialog.get_settings()
+                self.import_directory_optimized(directory, settings)
+            else:
+                # 用户取消，使用默认导入方法
+                self.import_directory(directory)
+
+    def import_directory_optimized(self, directory: str, settings: dict):
+        """使用高性能方法导入目录。"""
+        try:
+            # 创建相册
+            directory_name = Path(directory).name
+            album_data = {
+                "name": directory_name,
+                "description": f"从 {directory} 导入 (高性能模式)",
+                "directory": directory,
+                "import_on_create": True
+            }
+            
+            try:
+                album_id = self.db_manager.create_album(album_data)
+                if album_id:
+                    self.logger.info("Created album for optimized import: directory=%s, album_id=%s", 
+                                   directory, album_id)
+                    
+                    # 更新相册管理器
+                    if self.album_manager:
+                        self.album_manager.load_albums()
+                        self.album_manager.select_album(album_id)
+                        
+                    # 显示成功消息
+                    QMessageBox.information(self, "相册创建成功", 
+                                          f"已创建相册用于导入：{Path(directory).name}\n"
+                                          f"相册ID: {album_id}")
+                else:
+                    raise Exception("相册创建失败，未返回有效ID")
+                    
+            except Exception as e:
+                self.logger.error("Failed to create album for import: directory=%s, error=%s", 
+                                directory, str(e))
+                QMessageBox.critical(self, "相册创建失败", 
+                                   f"创建相册时发生错误：\n{str(e)}\n\n"
+                                   f"请检查相册名称是否重复或数据库是否正常。")
+                return
+            
+            # 准备标签设置
+            tag_settings = {}
+            if settings.get("import_tags"):
+                tag_settings["import_tags"] = True
+                if settings.get("translate_tags"):
+                    tag_settings["translate_tags"] = True
+            if settings.get("clear_existing_tags"):
+                tag_settings["clear_existing_tags"] = True
+            
+            # 创建进度对话框
+            self.import_progress_dialog = QProgressDialog("正在导入照片...", "取消", 0, 0, self)
+            self.import_progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            self.import_progress_dialog.setLabelText("准备导入...")
+            self.import_progress_dialog.show()
+            
+            # 启动高性能导入工作线程
+            self.optimized_import_worker = OptimizedImportWorker(
+                self.photo_manager,
+                directory,
+                True,  # recursive
+                album_id,
+                tag_settings,
+                settings.get("max_workers", 4),
+                settings.get("batch_size", 50)
+            )
+            
+            self.optimized_import_worker.progress.connect(self.update_optimized_import_progress)
+            self.optimized_import_worker.finished.connect(self.on_optimized_import_finished)
+            self.optimized_import_worker.error.connect(self.on_optimized_import_error)
+            self.optimized_import_worker.start()
+            
+        except Exception as e:
+            self.logger.error("Failed to start optimized import: directory=%s, error=%s", 
+                            directory, str(e))
+            QMessageBox.critical(self, "导入错误", f"启动高性能导入失败: {str(e)}")
+
+    def update_optimized_import_progress(self, message: str):
+        """更新高性能导入进度。"""
+        if hasattr(self, 'import_progress_dialog') and self.import_progress_dialog:
+            self.import_progress_dialog.setLabelText(message)
+            QApplication.processEvents()
+
+    def on_optimized_import_finished(self, result: dict):
+        """高性能导入完成处理。"""
+        if hasattr(self, 'import_progress_dialog') and self.import_progress_dialog:
+            self.import_progress_dialog.close()
+        
+        if result.get("success"):
+            # 显示结果
+            performance_info = result.get("performance", {})
+            message = f"""导入完成！
+
+已导入: {result.get("imported", 0)}
+已跳过: {result.get("skipped", 0)}
+错误: {result.get("errors", 0)}
+总计处理: {result.get("total_processed", 0)}
+
+性能统计:
+扫描时间: {performance_info.get("scan_time", "0.00s")}
+预处理时间: {performance_info.get("preprocess_time", "0.00s")}
+导入时间: {performance_info.get("import_time", "0.00s")}
+总时间: {performance_info.get("total_time", "0.00s")}"""
+            
+            QMessageBox.information(self, "高性能导入完成", message)
+            
+            # 刷新照片列表
+            self.refresh_photos()
+            
+            # 更新状态栏
+            self.statusBar().showMessage(f"高性能导入完成 - 导入 {result.get('imported', 0)} 张照片", 5000)
+            
+        else:
+            QMessageBox.critical(self, "导入错误", f"高性能导入失败: {result.get('error', '未知错误')}")
+
+    def on_optimized_import_error(self, error: str):
+        """高性能导入错误处理。"""
+        if hasattr(self, 'import_progress_dialog') and self.import_progress_dialog:
+            self.import_progress_dialog.close()
+        
+        self.logger.error("Optimized import error: %s", error)
+        QMessageBox.critical(self, "导入错误", f"高性能导入过程中发生错误: {error}")
     
     def import_files(self, files: List[str]):
         """Import specific files."""
@@ -1039,7 +1400,7 @@ class MainWindow(QMainWindow):
                 self.album_manager.select_album(album_id)
             
         except Exception as e:
-            self.logger.error("Failed to import photos", error=str(e))
+            self.logger.error("Failed to import photos: %s", str(e))
             QMessageBox.critical(self, "导入错误", f"导入照片失败: {str(e)}")
             progress.close()
         
@@ -1062,8 +1423,7 @@ class MainWindow(QMainWindow):
             # Create album first
             album_id = self.db_manager.create_album(album_data)
             if album_id:
-                self.logger.info("Created album for directory", 
-                               directory=directory, album_id=album_id)
+                self.logger.info("Created album for directory: directory=%s, album_id=%s", directory, album_id)
                 
                 # Update album manager
                 if self.album_manager:
@@ -1083,8 +1443,7 @@ class MainWindow(QMainWindow):
             self.import_worker.start()
             
         except Exception as e:
-            self.logger.error("Failed to import directory", 
-                            directory=directory, error=str(e))
+            self.logger.error("Failed to import directory: directory=%s, error=%s", directory, str(e))
             QMessageBox.critical(self, "Import Error", f"Failed to import directory: {str(e)}")
     
 
@@ -1128,20 +1487,19 @@ class MainWindow(QMainWindow):
         if self.album_manager:
             self.album_manager.load_albums()
         
-        self.logger.info("Import completed", 
-                        imported=imported_count, 
+        self.logger.info("Import completed: imported=%s", imported_count, 
                         skipped=skipped_count, 
                         errors=errors)
     
     def on_import_error(self, error: str, progress: QProgressDialog):
         """Handle import error."""
         progress.close()
-        self.logger.error("Import error", error_msg=error)
+        self.logger.error("Import error: %s", error)
         QMessageBox.critical(self, "导入错误", f"导入照片失败: {error}")
     
     def on_search_photo_selected(self, photo_id: int):
         """Handle photo selection from search results."""
-        self.logger.info("Search photo selected", photo_id=photo_id)
+        self.logger.info("Search photo selected: photo_id=%d", photo_id)
         
         # Get photo information
         photo_data = self.photo_manager.get_photo_info(photo_id)
@@ -1152,12 +1510,36 @@ class MainWindow(QMainWindow):
             if original_path:
                 # Original image found, display it
                 self.photo_viewer.display_photo(photo_data)
-                self.logger.info("Original image displayed", path=original_path)
+                self.logger.info("Original image displayed: %s", original_path)
             else:
                 # Original image not found, but we can still show metadata
                 self.photo_viewer.display_photo_info_only(photo_data)
-                self.logger.warning("Original image not found, showing metadata only", 
-                                  photo_id=photo_id)
+                self.logger.warning("Original image not found, showing metadata only: photo_id=%s", photo_id)
+            
+            # Update photo info panel (5区)
+            self.update_photo_info(photo_id)
+            
+            # Update tags panel (6区)
+            self.update_tags_for_photo(photo_id)
+    
+    def on_photo_selected(self, photo_id: int):
+        """Handle photo selection from main thumbnail widget."""
+        self.logger.info("Photo selected from main widget: photo_id=%d", photo_id)
+        
+        # Get photo information
+        photo_data = self.photo_manager.get_photo_info(photo_id)
+        if photo_data:
+            # Try to find original image
+            original_path = self.photo_manager.find_original_image_by_hash(photo_data["file_hash"])
+            
+            if original_path:
+                # Original image found, display it
+                self.photo_viewer.display_photo(photo_data)
+                self.logger.info("Original image displayed: %s", original_path)
+            else:
+                # Original image not found, but we can still show metadata
+                self.photo_viewer.display_photo_info_only(photo_data)
+                self.logger.warning("Original image not found, showing metadata only: photo_id=%s", photo_id)
             
             # Update photo info panel (5区)
             self.update_photo_info(photo_id)
@@ -1170,23 +1552,36 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'tag_manager'):
             photo_data = self.photo_manager.get_photo_info(photo_id)
             if photo_data:
-                # 更新tag_manager中的照片标签显示
-                self.tag_manager.update_photo_tags_display(photo_data)
+                # 更新tag_manager中的照片显示（包括AI信息和标签）
+                self.tag_manager.update_photo_display(photo_data)
+                self.logger.info("Tags and AI info updated for photo: photo_id=%s, is_ai_generated=%s", 
+                               photo_id, photo_data.get('is_ai_generated', False))
     
     def search_photos(self):
         """Enhanced search photos based on current filters."""
         # 获取基础搜索参数
         search_text = self.search_box.text() if self.search_box else ""
-        min_rating = self.rating_filter.value() if hasattr(self, 'rating_filter') else 0
+        min_rating = self.rating_filter.value() if (hasattr(self, 'rating_enabled') and self.rating_enabled.isChecked() and hasattr(self, 'rating_filter')) else 0
         favorites_only = self.favorites_only.isChecked() if hasattr(self, 'favorites_only') else False
         
-        # 获取高级筛选参数
-        min_width = self.min_width.value() if hasattr(self, 'min_width') else 0
-        min_height = self.min_height.value() if hasattr(self, 'min_height') else 0
-        min_size = self.min_size.value() if hasattr(self, 'min_size') else 0
-        camera_filter = self.camera_filter.text() if hasattr(self, 'camera_filter') else ""
-        date_from = self.date_from.date() if hasattr(self, 'date_from') else QDate.currentDate().addDays(-365)
-        date_to = self.date_to.date() if hasattr(self, 'date_to') else QDate.currentDate()
+        # 获取高级筛选参数（只有勾选后才生效）
+        min_width = self.min_width.value() if (hasattr(self, 'min_width') and hasattr(self, 'min_width_enabled') and self.min_width_enabled.isChecked()) else 0
+        min_height = self.min_height.value() if (hasattr(self, 'min_height') and hasattr(self, 'min_height_enabled') and self.min_height_enabled.isChecked()) else 0
+        min_size = self.min_size.value() if (hasattr(self, 'min_size') and hasattr(self, 'min_size_enabled') and self.min_size_enabled.isChecked()) else 0
+        camera_filter = self.camera_filter.text() if (hasattr(self, 'camera_filter') and hasattr(self, 'camera_filter_enabled') and self.camera_filter_enabled.isChecked()) else ""
+        
+        # 安全处理日期范围（只有勾选后才生效）
+        try:
+            if hasattr(self, 'date_enabled') and self.date_enabled.isChecked():
+                date_from = self.date_from.date() if hasattr(self, 'date_from') else QDate.currentDate().addDays(-365)
+                date_to = self.date_to.date() if hasattr(self, 'date_to') else QDate.currentDate()
+            else:
+                date_from = ""
+                date_to = ""
+        except Exception as e:
+            self.logger.warning(f"Failed to get date range: {e}, using empty dates")
+            date_from = ""
+            date_to = ""
         
         # 解析搜索关键词
         search_terms = self.parse_search_terms(search_text)
@@ -1200,10 +1595,13 @@ class MainWindow(QMainWindow):
             "min_height": min_height,
             "min_size_kb": min_size,
             "camera_filter": camera_filter,
-            "date_from": date_from.toString("yyyy-MM-dd"),
-            "date_to": date_to.toString("yyyy-MM-dd"),
             "limit": 500  # 增加结果数量
         }
+        
+        # 只有勾选了日期筛选才添加日期参数
+        if date_from and date_to:
+            search_params["date_from"] = date_from.toString("yyyy-MM-dd")
+            search_params["date_to"] = date_to.toString("yyyy-MM-dd")
         
         if favorites_only:
             search_params["favorites_only"] = True
@@ -1223,7 +1621,7 @@ class MainWindow(QMainWindow):
             results = self.photo_manager.search_photos(**broader_params)
             
             if results:
-                self.logger.info("Broader search found results", count=len(results))
+                self.logger.info("Broader search found results: count=%d", len(results))
         
         # 保存搜索结果用于导航
         self.current_search_results = results
@@ -1237,19 +1635,18 @@ class MainWindow(QMainWindow):
         else:
             self.logger.warning("search_results_widget not found")
         
+        # 同时显示在主窗口的缩略图组件中
+        if self.thumbnail_widget:
+            self.thumbnail_widget.display_photos(results)
+            self.logger.info("Search results displayed in main thumbnail widget: count=%d", len(results))
+        else:
+            self.logger.warning("main thumbnail_widget not found")
+        
         # Update status
         self.update_photo_count(len(results))
         
-        self.logger.info("Enhanced search completed", 
-                        query=search_text, 
-                        search_terms=search_terms,
-                        results_count=len(results),
-                        min_rating=min_rating,
-                        favorites_only=favorites_only,
-                        min_width=min_width,
-                        min_height=min_height,
-                        min_size=min_size,
-                        camera_filter=camera_filter)
+        self.logger.info("Enhanced search completed: query=%s, search_terms=%s, results_count=%s, min_rating=%s, favorites_only=%s, min_width=%s, min_height=%s, min_size=%s, camera_filter=%s", 
+                        search_text, search_terms, len(results), min_rating, favorites_only, min_width, min_height, min_size, camera_filter)
     
     def save_search_condition(self):
         """保存当前搜索条件"""
@@ -1257,12 +1654,17 @@ class MainWindow(QMainWindow):
             # 获取当前搜索条件
             search_condition = {
                 "search_text": self.search_box.text() if self.search_box else "",
+                "rating_enabled": self.rating_enabled.isChecked() if hasattr(self, 'rating_enabled') else False,
                 "min_rating": self.rating_filter.value() if hasattr(self, 'rating_filter') else 0,
                 "favorites_only": self.favorites_only.isChecked() if hasattr(self, 'favorites_only') else False,
+                "min_width_enabled": self.min_width_enabled.isChecked() if hasattr(self, 'min_width_enabled') else False,
                 "min_width": self.min_width.value() if hasattr(self, 'min_width') else 0,
                 "min_height": self.min_height.value() if hasattr(self, 'min_height') else 0,
+                "min_size_enabled": self.min_size_enabled.isChecked() if hasattr(self, 'min_size_enabled') else False,
                 "min_size": self.min_size.value() if hasattr(self, 'min_size') else 0,
+                "camera_filter_enabled": self.camera_filter_enabled.isChecked() if hasattr(self, 'camera_filter_enabled') else False,
                 "camera_filter": self.camera_filter.text() if hasattr(self, 'camera_filter') else "",
+                "date_enabled": self.date_enabled.isChecked() if hasattr(self, 'date_enabled') else False,
                 "date_from": self.date_from.date().toString("yyyy-MM-dd") if hasattr(self, 'date_from') else "",
                 "date_to": self.date_to.date().toString("yyyy-MM-dd") if hasattr(self, 'date_to') else "",
                 "quick_filter": self.quick_filter_combo.currentIndex() if hasattr(self, 'quick_filter_combo') else 0
@@ -1273,10 +1675,10 @@ class MainWindow(QMainWindow):
             self.config_manager.save()
             
             QMessageBox.information(self, "保存成功", "搜索条件已保存")
-            self.logger.info("Search condition saved", condition=search_condition)
+            self.logger.info("Search condition saved: condition=%s", search_condition)
             
         except Exception as e:
-            self.logger.error("Failed to save search condition", error=str(e))
+            self.logger.error("Failed to save search condition: error=%s", str(e))
             QMessageBox.critical(self, "保存失败", f"保存搜索条件失败：{str(e)}")
     
     def load_saved_search_condition(self):
@@ -1290,11 +1692,19 @@ class MainWindow(QMainWindow):
             if self.search_box and "search_text" in saved_condition:
                 self.search_box.setText(saved_condition["search_text"])
             
+            if hasattr(self, 'rating_enabled') and "rating_enabled" in saved_condition:
+                self.rating_enabled.setChecked(saved_condition["rating_enabled"])
+                self.rating_filter.setEnabled(saved_condition["rating_enabled"])
+            
             if hasattr(self, 'rating_filter') and "min_rating" in saved_condition:
                 self.rating_filter.setValue(saved_condition["min_rating"])
             
             if hasattr(self, 'favorites_only') and "favorites_only" in saved_condition:
                 self.favorites_only.setChecked(saved_condition["favorites_only"])
+            
+            if hasattr(self, 'min_width_enabled') and "min_width_enabled" in saved_condition:
+                self.min_width_enabled.setChecked(saved_condition["min_width_enabled"])
+                self.min_width.setEnabled(saved_condition["min_width_enabled"])
             
             if hasattr(self, 'min_width') and "min_width" in saved_condition:
                 self.min_width.setValue(saved_condition["min_width"])
@@ -1302,11 +1712,24 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'min_height') and "min_height" in saved_condition:
                 self.min_height.setValue(saved_condition["min_height"])
             
+            if hasattr(self, 'min_size_enabled') and "min_size_enabled" in saved_condition:
+                self.min_size_enabled.setChecked(saved_condition["min_size_enabled"])
+                self.min_size.setEnabled(saved_condition["min_size_enabled"])
+            
             if hasattr(self, 'min_size') and "min_size" in saved_condition:
                 self.min_size.setValue(saved_condition["min_size"])
             
+            if hasattr(self, 'camera_filter_enabled') and "camera_filter_enabled" in saved_condition:
+                self.camera_filter_enabled.setChecked(saved_condition["camera_filter_enabled"])
+                self.camera_filter.setEnabled(saved_condition["camera_filter_enabled"])
+            
             if hasattr(self, 'camera_filter') and "camera_filter" in saved_condition:
                 self.camera_filter.setText(saved_condition["camera_filter"])
+            
+            if hasattr(self, 'date_enabled') and "date_enabled" in saved_condition:
+                self.date_enabled.setChecked(saved_condition["date_enabled"])
+                self.date_from.setEnabled(saved_condition["date_enabled"])
+                self.date_to.setEnabled(saved_condition["date_enabled"])
             
             if hasattr(self, 'date_from') and "date_from" in saved_condition:
                 date_from = QDate.fromString(saved_condition["date_from"], "yyyy-MM-dd")
@@ -1321,10 +1744,10 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'quick_filter_combo') and "quick_filter" in saved_condition:
                 self.quick_filter_combo.setCurrentIndex(saved_condition["quick_filter"])
             
-            self.logger.info("Saved search condition loaded", condition=saved_condition)
+            self.logger.info("Saved search condition loaded: condition=%s", saved_condition)
             
         except Exception as e:
-            self.logger.error("Failed to load saved search condition", error=str(e))
+            self.logger.error("Failed to load saved search condition: error=%s", str(e))
     
     def parse_search_terms(self, search_text: str) -> List[str]:
         """Parse search text into individual terms.
@@ -1333,6 +1756,8 @@ class MainWindow(QMainWindow):
         - Short phrases separated by commas or semicolons
         - Words separated by spaces
         - Mixed format
+        - Chinese text and phrases
+        - Exact phrase matching with quotes
         
         Args:
             search_text: Raw search text
@@ -1345,14 +1770,23 @@ class MainWindow(QMainWindow):
         
         terms = []
         
-        # 首先按逗号和分号分割短句
+        # 处理引号包围的精确词组
+        import re
+        quoted_phrases = re.findall(r'"([^"]+)"', search_text)
+        for phrase in quoted_phrases:
+            terms.append(phrase.strip())
+        
+        # 移除引号部分，处理剩余文本
+        remaining_text = re.sub(r'"[^"]*"', '', search_text)
+        
+        # 按逗号和分号分割短句
         phrases = []
         for separator in [',', ';']:
-            if separator in search_text:
-                phrases.extend(search_text.split(separator))
+            if separator in remaining_text:
+                phrases.extend(remaining_text.split(separator))
                 break
         else:
-            phrases = [search_text]
+            phrases = [remaining_text]
         
         # 处理每个短句，按空格分割单词
         for phrase in phrases:
@@ -1374,16 +1808,37 @@ class MainWindow(QMainWindow):
     def refresh_photos(self):
         """Refresh the photo display."""
         if self.thumbnail_widget:
-            # Load photos from database and update display
-            photos = self.photo_manager.search_photos(limit=1000)
+            # 根据当前状态决定显示哪些照片
+            photos = []
+            
+            if hasattr(self, 'current_search_results') and self.current_search_results:
+                # 如果有搜索结果，显示搜索结果
+                photos = self.current_search_results
+                self.logger.info("Displaying search results in main widget: count=%d", len(photos))
+            elif hasattr(self, 'current_album_id') and self.current_album_id:
+                # 如果选中了相册，显示相册中的照片
+                try:
+                    photos = self.db_manager.get_album_photos(self.current_album_id)
+                    self.logger.info("Displaying album photos: album_id=%s, count=%d", self.current_album_id, len(photos))
+                except Exception as e:
+                    self.logger.error("Failed to get album photos: album_id=%s, error=%s", self.current_album_id, str(e))
+                    photos = []
+            else:
+                # 默认显示所有照片
+                photos = self.photo_manager.search_photos(limit=1000)
+                self.logger.info("Displaying all photos: count=%d", len(photos))
+            
+            # 更新显示
             self.thumbnail_widget.display_photos(photos)
             self.update_photo_count(len(photos))
-            self.logger.info("Photos refreshed", count=len(photos))
+            self.logger.info("Main thumbnail widget refreshed with %d photos", len(photos))
+        else:
+            self.logger.warning("Main thumbnail_widget is None, cannot refresh photos")
     
     def update_photo_info(self, photo_id: int):
         """Update photo information display."""
         # In a real implementation, this would update the photo viewer
-        self.logger.info("Updating photo info", photo_id=photo_id)
+        self.logger.info("Updating photo info: photo_id=%s", photo_id)
     
     def update_photo_count(self, count: int):
         """Update the photo count display."""
@@ -1425,7 +1880,7 @@ class MainWindow(QMainWindow):
             self.on_photo_selected(next_photo.get('id'))
             
         except Exception as e:
-            self.logger.error("Failed to show previous photo", error=str(e))
+            self.logger.error("Failed to show previous photo: error=%s", str(e))
     
     def show_next_photo(self):
         """显示下一张图片"""
@@ -1458,7 +1913,7 @@ class MainWindow(QMainWindow):
             self.on_photo_selected(next_photo.get('id'))
             
         except Exception as e:
-            self.logger.error("Failed to show next photo", error=str(e))
+            self.logger.error("Failed to show next photo: error=%s", str(e))
     
     def get_current_photo_list(self) -> list:
         """获取当前显示的照片列表"""
@@ -1484,22 +1939,23 @@ class MainWindow(QMainWindow):
             # 设置当前选中的相册ID
             self.current_album_id = album_id
             
-            # 获取相册中的照片列表
-            album_photos = self.db_manager.get_album_photos(album_id)
-            self.current_album_photos = album_photos
-            
             # 清除搜索结果，因为现在显示的是相册照片
             self.current_search_results = None
             
-            self.logger.info("Album selected", album_id=album_id, photo_count=len(album_photos))
+            # 刷新照片显示（这会自动加载相册中的照片）
+            self.refresh_photos()
+            
+            self.logger.info("Album selected: album_id=%s", album_id)
             
         except Exception as e:
-            self.logger.error("Failed to handle album selection", album_id=album_id, error=str(e))
+            self.logger.error("Failed to handle album selection: album_id=%s, error=%s", album_id, str(e))
+            # 显示错误消息给用户
+            QMessageBox.critical(self, "错误", f"选择相册时发生错误：{str(e)}")
     
     def on_tag_selected(self, tag_id: int):
         """Handle tag selection."""
         # In a real implementation, this would filter photos by tag
-        self.logger.info("Tag selected", tag_id=tag_id)
+        self.logger.info("Tag selected: tag_id=%s", tag_id)
     
     def select_all_photos(self):
         """Select all displayed photos."""
@@ -1527,7 +1983,7 @@ class MainWindow(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             # In a real implementation, this would delete from database
-            self.logger.info("Deleting photos", count=len(self.selected_photos))
+            self.logger.info("Deleting photos: count=%d", len(self.selected_photos))
             QMessageBox.information(self, "删除照片", "照片删除成功。")
             self.refresh_photos()
     
@@ -1541,7 +1997,7 @@ class MainWindow(QMainWindow):
             self.view_combo.setCurrentIndex(2)
         
         # In a real implementation, this would change the view
-        self.logger.info("View mode changed", mode=mode)
+        self.logger.info("View mode changed: mode=%s", mode)
     
     def on_view_mode_changed(self, index: int):
         """Handle view mode combo box change."""
@@ -1553,6 +2009,9 @@ class MainWindow(QMainWindow):
         """Clear all search filters."""
         if self.search_box:
             self.search_box.clear()
+        if hasattr(self, 'rating_enabled'):
+            self.rating_enabled.setChecked(False)
+            self.rating_filter.setEnabled(False)
         if hasattr(self, 'rating_filter'):
             self.rating_filter.setValue(0)
         if hasattr(self, 'favorites_only'):
@@ -1561,14 +2020,29 @@ class MainWindow(QMainWindow):
             self.quick_filter_combo.setCurrentIndex(0)
         
         # 清除新的筛选条件
+        if hasattr(self, 'min_width_enabled'):
+            self.min_width_enabled.setChecked(False)
+            self.min_width.setEnabled(False)
         if hasattr(self, 'min_width'):
             self.min_width.setValue(0)
         if hasattr(self, 'min_height'):
+            self.min_height.setEnabled(False)
+        if hasattr(self, 'min_height'):
             self.min_height.setValue(0)
+        if hasattr(self, 'min_size_enabled'):
+            self.min_size_enabled.setChecked(False)
+            self.min_size.setEnabled(False)
         if hasattr(self, 'min_size'):
             self.min_size.setValue(0)
+        if hasattr(self, 'camera_filter_enabled'):
+            self.camera_filter_enabled.setChecked(False)
+            self.camera_filter.setEnabled(False)
         if hasattr(self, 'camera_filter'):
             self.camera_filter.clear()
+        if hasattr(self, 'date_enabled'):
+            self.date_enabled.setChecked(False)
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
         if hasattr(self, 'date_from'):
             self.date_from.setDate(QDate.currentDate().addDays(-365))
         if hasattr(self, 'date_to'):
@@ -1593,6 +2067,7 @@ class MainWindow(QMainWindow):
                 self.favorites_only.setChecked(True)
             elif filter_name == "recent":
                 # 最近30天
+                self.date_enabled.setChecked(True)
                 self.date_from.setDate(QDate.currentDate().addDays(-30))
                 self.date_to.setDate(QDate.currentDate())
             elif filter_name == "untagged":
@@ -1600,17 +2075,19 @@ class MainWindow(QMainWindow):
                 self.search_box.setText("untagged")
             elif filter_name == "large_size":
                 # 大尺寸照片（宽度或高度大于2000像素）
+                self.min_width_enabled.setChecked(True)
                 self.min_width.setValue(2000)
                 self.min_height.setValue(2000)
             elif filter_name == "small_size":
                 # 小尺寸照片（宽度和高度都小于1000像素）
                 # 这里需要特殊处理，因为我们需要小于而不是大于
+                # 暂时使用搜索关键词，后续可以优化为专门的筛选逻辑
                 self.search_box.setText("small_size")
             
             # 执行搜索
             self.search_photos()
             
-            self.logger.info("Quick filter applied", filter=filter_name)
+            self.logger.info("Quick filter applied: filter=%s", filter_name)
     
     def toggle_albums_panel(self, checked: bool):
         """Toggle albums panel visibility."""
@@ -1712,7 +2189,7 @@ class MainWindow(QMainWindow):
                         tools_menu.addAction(action)
                         
         except Exception as e:
-            self.logger.error("Failed to add plugin menu actions", error=str(e))
+            self.logger.error("Failed to add plugin menu actions: error=%s", str(e))
     
     def handle_plugin_action(self):
         """处理插件动作"""
@@ -1730,10 +2207,10 @@ class MainWindow(QMainWindow):
                     method = getattr(plugin, action_name)
                     method(self)  # 传递self作为parent参数
                 else:
-                    self.logger.error("Plugin action not found", plugin=plugin_name, action=action_name)
+                    self.logger.error("Plugin action not found: plugin=%s, action=%s", plugin_name, action_name)
                     
         except Exception as e:
-            self.logger.error("Failed to handle plugin action", error=str(e))
+            self.logger.error("Failed to handle plugin action: error=%s", str(e))
             QMessageBox.critical(self, "错误", f"插件动作执行失败：{str(e)}")
     
     def add_plugin_toolbar_actions(self, toolbar):
@@ -1755,7 +2232,7 @@ class MainWindow(QMainWindow):
                     toolbar.addAction(action)
                     
         except Exception as e:
-            self.logger.error("Failed to add plugin toolbar actions", error=str(e))
+            self.logger.error("Failed to add plugin toolbar actions: error=%s", str(e))
     
     def show_google_translate_config(self):
         """显示Google翻译插件配置对话框"""
@@ -1764,7 +2241,7 @@ class MainWindow(QMainWindow):
             dialog = PluginConfigDialog(self)
             dialog.exec()
         except Exception as e:
-            self.logger.error("Failed to show Google Translate config", error=str(e))
+            self.logger.error("Failed to show Google Translate config: error=%s", str(e))
             QMessageBox.critical(self, "错误", f"无法打开Google翻译插件配置：{str(e)}")
     
     def show_proxy_config(self):
@@ -1775,7 +2252,7 @@ class MainWindow(QMainWindow):
             dialog = ProxyConfigDialog(self)
             dialog.exec()
         except Exception as e:
-            self.logger.error("Failed to show proxy config", error=str(e))
+            self.logger.error("Failed to show proxy config: error=%s", str(e))
             QMessageBox.critical(self, "错误", f"无法打开代理配置对话框：{str(e)}")
     
     def repair_file_paths(self):
@@ -1816,7 +2293,7 @@ class MainWindow(QMainWindow):
             self.path_repair_worker.start()
             
         except Exception as e:
-            self.logger.error("Failed to start path repair", error=str(e))
+            self.logger.error("Failed to start path repair: error=%s", str(e))
             QMessageBox.critical(
                 self,
                 self.get_text("Error", "错误"),
@@ -1904,7 +2381,7 @@ class MainWindow(QMainWindow):
             language_code: Language code to set.
         """
         if self.language_manager.set_language(language_code):
-            self.logger.info("Language changed", language=language_code)
+            self.logger.info("Language changed: language=%s", language_code)
             
             # Update checked state of language actions
             for action in self.language_actions:
@@ -1965,7 +2442,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "警告", "AI信息刷新失败")
         
         except Exception as e:
-            self.logger.error("Failed to refresh current photo AI info", error=str(e))
+            self.logger.error("Failed to refresh current photo AI info: error=%s", str(e))
             QMessageBox.critical(self, "错误", f"刷新AI信息时发生错误：{str(e)}")
     
     def refresh_album_ai_info(self):
@@ -2006,8 +2483,39 @@ class MainWindow(QMainWindow):
                 self.album_manager.load_album_photos(self.current_album_id)
         
         except Exception as e:
-            self.logger.error("Failed to refresh album AI info", error=str(e))
+            self.logger.error("Failed to refresh album AI info: error=%s", str(e))
             QMessageBox.critical(self, "错误", f"刷新相册AI信息时发生错误：{str(e)}")
+    
+    def on_rating_enabled_changed(self, state):
+        """处理评分筛选启用状态变化"""
+        self.rating_filter.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_min_width_enabled_changed(self, state):
+        """处理最小宽度筛选启用状态变化"""
+        self.min_width.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_min_size_enabled_changed(self, state):
+        """处理最小大小筛选启用状态变化"""
+        self.min_size.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_camera_filter_enabled_changed(self, state):
+        """处理相机筛选启用状态变化"""
+        self.camera_filter.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_date_enabled_changed(self, state):
+        """处理日期筛选启用状态变化"""
+        self.date_from.setEnabled(state == Qt.CheckState.Checked)
+        self.date_to.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
     
     def closeEvent(self, event):
         """Handle application close."""
@@ -2022,6 +2530,47 @@ class MainWindow(QMainWindow):
         
         self.logger.info("Application closing")
         event.accept()
+
+    def import_multiple_folders(self):
+        """导入多个文件夹"""
+        try:
+            from .multi_folder_import_dialog import MultiFolderImportDialog
+            
+            dialog = MultiFolderImportDialog(self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # 对话框内部已经处理了导入逻辑
+                # 这里只需要刷新界面
+                self.refresh_albums()
+                self.logger.info("Multiple folders import completed")
+            
+        except Exception as e:
+            self.logger.error("Failed to import multiple folders: error=%s", str(e))
+            QMessageBox.critical(self, "错误", f"多文件夹导入失败:\n{str(e)}")
+
+    def refresh_albums(self):
+        """刷新相册列表"""
+        try:
+            if self.album_manager:
+                self.album_manager.load_albums()
+            self.logger.info("Albums refreshed")
+        except Exception as e:
+            self.logger.error("Failed to refresh albums: error=%s", str(e))
+
+    def import_folder_optimized(self):
+        """直接使用高性能方法导入文件夹。"""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "选择照片目录 (高性能模式)",
+            ""
+        )
+        
+        if directory:
+            # 显示导入配置对话框
+            config_dialog = ImportConfigDialog(self)
+            if config_dialog.exec() == QDialog.DialogCode.Accepted:
+                settings = config_dialog.get_settings()
+                self.import_directory_optimized(directory, settings)
+            # 如果用户取消，不执行任何操作
 
 
 def main():

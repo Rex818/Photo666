@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "models": {
-    "default_model": "microsoft/Florence-2-large",
+    "default_model": "microsoft/Florence-2-large-ft",
     "available_models": [
       "microsoft/Florence-2-base",
       "microsoft/Florence-2-base-ft",
@@ -10,7 +10,7 @@
       "MiaoshouAI/Florence-2-base-PromptGen-v1.5",
       "MiaoshouAI/Florence-2-large-PromptGen-v1.5"
     ],
-    "custom_path": "E:/Cursor-test/Florence-2-large"
+    "custom_path": "E:/models/Florence-2-large-ft"
   },
   "inference": {
     "precision": "fp16",
@@ -20,7 +20,7 @@
     "do_sample": true,
     "temperature": 0.7,
     "top_p": 0.9,
-    "default_level": "normal"
+    "default_level": "detailed"
   },
   "output": {
     "save_to_file": true,

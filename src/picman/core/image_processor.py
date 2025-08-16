@@ -2,10 +2,15 @@
 Image processing utilities.
 """
 
+import os
+import logging
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
-import structlog
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from ..config.manager import ConfigManager
 
@@ -15,7 +20,7 @@ class ImageProcessor:
     
     def __init__(self, config_manager: ConfigManager):
         self.config = config_manager
-        self.logger = structlog.get_logger("picman.core.image_processor")
+        self.logger = logger
     
     def resize_image(self, image_path: str, output_path: str, 
                     size: Tuple[int, int], maintain_aspect: bool = True) -> bool:
@@ -32,16 +37,11 @@ class ImageProcessor:
                 
                 img.save(output_path, quality=95, optimize=True)
                 
-            self.logger.info("Image resized", 
-                           input=image_path, 
-                           output=output_path, 
-                           size=size)
+            self.logger.info(f"Image resized: input={image_path}, output={output_path}, size={size}")
             return True
             
         except Exception as e:
-            self.logger.error("Failed to resize image", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to resize image: path={image_path}, error={str(e)}")
             return False
     
     def rotate_image(self, image_path: str, output_path: str, angle: float) -> bool:
@@ -55,16 +55,11 @@ class ImageProcessor:
                 
                 rotated.save(output_path, quality=95, optimize=True)
                 
-            self.logger.info("Image rotated", 
-                           input=image_path, 
-                           output=output_path, 
-                           angle=angle)
+            self.logger.info(f"Image rotated: input={image_path}, output={output_path}, angle={angle}")
             return True
             
         except Exception as e:
-            self.logger.error("Failed to rotate image", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to rotate image: path={image_path}, error={str(e)}")
             return False
     
     def adjust_brightness(self, image_path: str, output_path: str, factor: float) -> bool:
@@ -79,16 +74,11 @@ class ImageProcessor:
                 
                 enhanced.save(output_path, quality=95, optimize=True)
                 
-            self.logger.info("Image brightness adjusted", 
-                           input=image_path, 
-                           output=output_path, 
-                           factor=factor)
+            self.logger.info(f"Image brightness adjusted: input={image_path}, output={output_path}, factor={factor}")
             return True
             
         except Exception as e:
-            self.logger.error("Failed to adjust brightness", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to adjust brightness: path={image_path}, error={str(e)}")
             return False
     
     def adjust_contrast(self, image_path: str, output_path: str, factor: float) -> bool:
@@ -103,16 +93,11 @@ class ImageProcessor:
                 
                 enhanced.save(output_path, quality=95, optimize=True)
                 
-            self.logger.info("Image contrast adjusted", 
-                           input=image_path, 
-                           output=output_path, 
-                           factor=factor)
+            self.logger.info(f"Image contrast adjusted: input={image_path}, output={output_path}, factor={factor}")
             return True
             
         except Exception as e:
-            self.logger.error("Failed to adjust contrast", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to adjust contrast: path={image_path}, error={str(e)}")
             return False
     
     def convert_format(self, image_path: str, output_path: str, 
@@ -129,16 +114,11 @@ class ImageProcessor:
                 
                 img.save(output_path, format=format, quality=quality, optimize=True)
                 
-            self.logger.info("Image format converted", 
-                           input=image_path, 
-                           output=output_path, 
-                           format=format)
+            self.logger.info(f"Image format converted: input={image_path}, output={output_path}, format={format}")
             return True
             
         except Exception as e:
-            self.logger.error("Failed to convert image format", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to convert image format: path={image_path}, error={str(e)}")
             return False
     
     def get_image_info(self, image_path: str) -> Optional[Dict[str, Any]]:
@@ -163,7 +143,5 @@ class ImageProcessor:
                 return info
                 
         except Exception as e:
-            self.logger.error("Failed to get image info", 
-                            path=image_path, 
-                            error=str(e))
+            self.logger.error(f"Failed to get image info: path={image_path}, error={str(e)}")
             return None

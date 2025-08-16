@@ -7,11 +7,15 @@ import os
 import sys
 import torch
 import logging
+import time
+import requests
+import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from datetime import datetime
-import hashlib
 from unittest.mock import patch
+import shutil
+import json
 
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent.parent
@@ -69,6 +73,11 @@ class ModelManager:
         self.max_cache_size = 2  # 最大缓存模型数量
         self.cache_timeout = 3600  # 缓存超时时间（秒）
         
+        # 下载管理
+        self.download_sessions = {}  # 下载会话信息
+        self.download_chunk_size = 8192  # 下载块大小
+        self.download_cancelled = False  # 下载取消标志
+        
         # 初始化目录
         self._init_directories()
     
@@ -83,7 +92,11 @@ class ModelManager:
             self.cache_dir = Path(__file__).parent.parent / "cache"
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             
-            self.logger.info(f"模型目录初始化完成 - 插件目录: {self.plugin_models_dir}, 缓存目录: {self.cache_dir}")
+            # 下载临时目录
+            self.temp_dir = Path(__file__).parent.parent / "temp"
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            self.logger.info(f"模型目录初始化完成 - 插件目录: {self.plugin_models_dir}, 缓存目录: {self.cache_dir}, 临时目录: {self.temp_dir}")
             
         except Exception as e:
             self.logger.error(f"模型目录初始化失败: {str(e)}")
@@ -100,13 +113,286 @@ class ModelManager:
         """
         self.loading_progress_callback = callback
     
-    def _update_progress(self, step: str, progress: int, message: str):
-        """更新进度"""
+    def cancel_download(self):
+        """取消当前下载"""
+        self.download_cancelled = True
+        self.logger.info("用户请求取消下载")
+    
+    def reset_download_state(self):
+        """重置下载状态"""
+        self.download_cancelled = False
+    
+    def _update_progress(self, step: str, progress: int, message: str, speed: str = ""):
+        """更新进度显示
+        
+        Args:
+            step: 步骤名称
+            progress: 进度百分比 (0-100)
+            message: 详细消息
+            speed: 速度信息 (可选)
+        """
         if self.loading_progress_callback:
             try:
-                self.loading_progress_callback(step, progress, message)
+                if speed:
+                    full_message = f"{message} - {speed}"
+                else:
+                    full_message = message
+                self.loading_progress_callback(step, progress, full_message)
             except Exception as e:
                 self.logger.warning(f"进度回调执行失败: {str(e)}")
+    
+    def _format_speed(self, bytes_per_second: float) -> str:
+        """格式化下载速度"""
+        if bytes_per_second < 1024:
+            return f"{bytes_per_second:.1f} B/s"
+        elif bytes_per_second < 1024 * 1024:
+            return f"{bytes_per_second / 1024:.1f} KB/s"
+        else:
+            return f"{bytes_per_second / (1024 * 1024):.1f} MB/s"
+    
+    def _format_size(self, bytes_size: int) -> str:
+        """格式化文件大小"""
+        if bytes_size < 1024:
+            return f"{bytes_size} B"
+        elif bytes_size < 1024 * 1024:
+            return f"{bytes_size / 1024:.1f} KB"
+        elif bytes_size < 1024 * 1024 * 1024:
+            return f"{bytes_size / (1024 * 1024):.1f} MB"
+        else:
+            return f"{bytes_size / (1024 * 1024 * 1024):.1f} GB"
+    
+    def _get_file_hash(self, file_path: Path) -> str:
+        """计算文件哈希值"""
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    
+    def _download_file_with_resume(self, url: str, file_path: Path, progress_callback=None) -> bool:
+        """带断点续传的文件下载
+        
+        Args:
+            url: 下载URL
+            file_path: 目标文件路径
+            progress_callback: 进度回调函数
+            
+        Returns:
+            下载是否成功
+        """
+        try:
+            # 创建目录
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 检查是否存在部分下载的文件
+            temp_path = file_path.with_suffix(file_path.suffix + '.tmp')
+            resume_pos = 0
+            
+            if temp_path.exists():
+                resume_pos = temp_path.stat().st_size
+                self.logger.info(f"发现部分下载文件，从 {self._format_size(resume_pos)} 处继续下载")
+            
+            # 设置请求头
+            headers = {}
+            if resume_pos > 0:
+                headers['Range'] = f'bytes={resume_pos}-'
+            
+            # 发送请求
+            response = requests.get(url, headers=headers, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            # 获取文件总大小
+            if 'content-range' in response.headers:
+                total_size = int(response.headers['content-range'].split('/')[-1])
+            elif 'content-length' in response.headers:
+                total_size = int(response.headers['content-length'])
+            else:
+                total_size = 0
+            
+            # 打开文件进行写入
+            mode = 'ab' if resume_pos > 0 else 'wb'
+            with open(temp_path, mode) as f:
+                downloaded = resume_pos
+                start_time = time.time()
+                last_update_time = start_time
+                
+                for chunk in response.iter_content(chunk_size=self.download_chunk_size):
+                     # 检查是否取消下载
+                     if self.download_cancelled:
+                         self.logger.info("下载被用户取消")
+                         return False
+                         
+                     if chunk:
+                         f.write(chunk)
+                         downloaded += len(chunk)
+                         
+                         # 更新进度（每秒最多更新一次）
+                         current_time = time.time()
+                         if current_time - last_update_time >= 1.0:
+                             if total_size > 0:
+                                 progress = int((downloaded / total_size) * 100)
+                                 speed = (downloaded - resume_pos) / (current_time - start_time)
+                                 speed_str = self._format_speed(speed)
+                                 message = f"下载中: {self._format_size(downloaded)}/{self._format_size(total_size)}"
+                                 
+                                 if progress_callback:
+                                     progress_callback("downloading", progress, message, speed_str)
+                             
+                             last_update_time = current_time
+            
+            # 重命名临时文件
+            if file_path.exists():
+                file_path.unlink()
+            temp_path.rename(file_path)
+            
+            self.logger.info(f"文件下载完成: {file_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"文件下载失败 {url}: {str(e)}")
+            return False
+    
+    def _download_model_files(self, model_name: str, target_dir: Path, progress_callback=None) -> bool:
+        """下载模型文件
+        
+        Args:
+            model_name: 模型名称
+            target_dir: 目标目录
+            progress_callback: 进度回调函数
+            
+        Returns:
+            下载是否成功
+        """
+        try:
+            from huggingface_hub import HfApi, list_repo_files
+            
+            # 创建API客户端
+            api = HfApi()
+            
+            # 获取模型文件列表
+            self._update_progress("downloading", 5, f"获取模型文件列表: {model_name}")
+            files = list_repo_files(model_name)
+            
+            if not files:
+                self.logger.error(f"无法获取模型文件列表: {model_name}")
+                return False
+            
+            # 过滤出需要的文件
+            required_files = []
+            for file in files:
+                if file.endswith(('.bin', '.safetensors', '.json', '.txt', '.md', '.py')):
+                    required_files.append(file)
+            
+            total_files = len(required_files)
+            downloaded_files = 0
+            
+            self._update_progress("downloading", 10, f"开始下载 {total_files} 个文件")
+            
+            for file in required_files:
+                try:
+                    # 构建下载URL
+                    file_url = f"https://huggingface.co/{model_name}/resolve/main/{file}"
+                    file_path = target_dir / file
+                    
+                    # 创建子目录
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # 下载文件
+                    self._update_progress("downloading", 10 + int((downloaded_files / total_files) * 80), 
+                                        f"下载文件: {file}")
+                    
+                    if self._download_file_with_resume(file_url, file_path, progress_callback):
+                        downloaded_files += 1
+                    else:
+                        self.logger.error(f"文件下载失败: {file}")
+                        return False
+                        
+                except Exception as e:
+                    self.logger.error(f"下载文件失败 {file}: {str(e)}")
+                    return False
+            
+            self._update_progress("downloading", 95, "下载完成，正在验证...")
+            
+            # 验证下载的文件
+            if self._is_valid_model_directory(target_dir):
+                self._update_progress("downloading", 100, "模型下载完成")
+                return True
+            else:
+                self.logger.error(f"下载的模型无效: {target_dir}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"模型文件下载失败 {model_name}: {str(e)}")
+            return False
+    
+    def download_model(self, model_name: str, target_path: Optional[str] = None) -> bool:
+        """下载模型（增强版）
+        
+        Args:
+            model_name: 模型名称
+            target_path: 目标路径，如果为None则使用插件默认路径
+            
+        Returns:
+            下载是否成功
+        """
+        try:
+            # 重置下载状态
+            self.reset_download_state()
+            if target_path is None:
+                target_path = str(self.plugin_models_dir / model_name.split('/')[-1])
+            
+            target_dir = Path(target_path)
+            
+            # 检查模型是否已经存在且有效
+            if target_dir.exists() and self._is_valid_model_directory(target_dir):
+                self.logger.info(f"模型已存在且有效，跳过下载: {target_path}")
+                self._update_progress("downloading", 100, f"模型已存在: {target_path}")
+                return True
+            
+            # 如果目录存在但模型无效，删除目录重新下载
+            if target_dir.exists():
+                self.logger.info(f"删除无效的模型目录: {target_path}")
+                shutil.rmtree(target_dir)
+            
+            target_dir.mkdir(parents=True, exist_ok=True)
+            
+            self._update_progress("downloading", 0, f"开始下载模型: {model_name}")
+            
+            # 应用代理设置
+            self.proxy_manager.apply_proxy_to_environment()
+            
+            # 尝试使用增强的下载方法
+            if self._download_model_files(model_name, target_dir, self.loading_progress_callback):
+                return True
+            
+            # 如果增强下载失败，回退到原始方法
+            self.logger.warning("增强下载失败，使用原始下载方法")
+            self._update_progress("downloading", 0, f"使用原始方法下载模型: {model_name}")
+            
+            from huggingface_hub import snapshot_download
+            
+            # 直接下载模型文件
+            snapshot_download(
+                repo_id=model_name,
+                local_dir=target_path,
+                local_dir_use_symlinks=False
+            )
+            
+            # 验证下载的模型是否有效
+            if not self._is_valid_model_directory(target_dir):
+                self.logger.error(f"下载的模型无效: {target_path}")
+                self._update_progress("downloading", 0, f"下载的模型无效: {target_path}")
+                return False
+            
+            self._update_progress("downloading", 100, f"模型下载完成: {target_path}")
+            self.logger.info(f"模型下载完成 - 模型名称: {model_name}, 目标路径: {target_path}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"模型下载失败 {model_name}: {str(e)}")
+            self._update_progress("downloading", 0, f"下载失败: {str(e)}")
+            return False
     
     def find_model(self, model_name: str, custom_path: Optional[str] = None) -> Optional[str]:
         """查找模型文件
@@ -244,69 +530,6 @@ class ModelManager:
         except Exception as e:
             self.logger.warning(f"检查HuggingFace缓存失败 {model_name}: {str(e)}")
             return None
-    
-    def download_model(self, model_name: str, target_path: Optional[str] = None) -> bool:
-        """下载模型
-        
-        Args:
-            model_name: 模型名称
-            target_path: 目标路径，如果为None则使用插件默认路径
-            
-        Returns:
-            下载是否成功
-        """
-        try:
-            if target_path is None:
-                target_path = str(self.plugin_models_dir / model_name.split('/')[-1])
-            
-            target_dir = Path(target_path)
-            
-            # 检查模型是否已经存在且有效
-            if target_dir.exists() and self._is_valid_model_directory(target_dir):
-                self.logger.info(f"模型已存在且有效，跳过下载: {target_path}")
-                self._update_progress("downloading", 100, f"模型已存在: {target_path}")
-                return True
-            
-            # 如果目录存在但模型无效，删除目录重新下载
-            if target_dir.exists():
-                self.logger.info(f"删除无效的模型目录: {target_path}")
-                import shutil
-                shutil.rmtree(target_dir)
-            
-            target_dir.mkdir(parents=True, exist_ok=True)
-            
-            self._update_progress("downloading", 0, f"开始下载模型: {model_name}")
-            
-            # 应用代理设置
-            self.proxy_manager.apply_proxy_to_environment()
-            
-            # 使用huggingface_hub.snapshot_download直接下载模型文件，避免flash_attn检查
-            from huggingface_hub import snapshot_download
-            
-            self.logger.info(f"开始下载模型 - 模型名称: {model_name}, 目标路径: {target_path}")
-            
-            # 直接下载模型文件
-            snapshot_download(
-                repo_id=model_name,
-                local_dir=target_path,
-                local_dir_use_symlinks=False
-            )
-            
-            # 验证下载的模型是否有效
-            if not self._is_valid_model_directory(target_dir):
-                self.logger.error(f"下载的模型无效: {target_path}")
-                self._update_progress("downloading", 0, f"下载的模型无效: {target_path}")
-                return False
-            
-            self._update_progress("downloading", 100, f"模型下载完成: {target_path}")
-            self.logger.info(f"模型下载完成 - 模型名称: {model_name}, 目标路径: {target_path}")
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"模型下载失败 {model_name}: {str(e)}")
-            self._update_progress("downloading", 0, f"下载失败: {str(e)}")
-            return False
     
     def load_model(self, model_name: str, custom_path: Optional[str] = None, use_cache: bool = True) -> bool:
         """加载模型（用户确认后调用）

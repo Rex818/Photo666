@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from PIL import Image
-import structlog
+import logging
 
 
 @dataclass
@@ -73,7 +73,7 @@ class AIMetadataExtractor:
     """AI元数据提取器"""
     
     def __init__(self):
-        self.logger = structlog.get_logger("picman.core.ai_metadata_extractor")
+        self.logger = logging.getLogger("picman.core.ai_metadata_extractor")
         
         # 支持的AI软件标识
         self.ai_software_patterns = {
@@ -108,7 +108,7 @@ class AIMetadataExtractor:
             image_path = Path(image_path)
             
             if not image_path.exists():
-                self.logger.warning("Image file not found", path=str(image_path))
+                self.logger.warning(f"Image file not found: {str(image_path)}")
                 return metadata
             
             # 打开图片
@@ -127,17 +127,12 @@ class AIMetadataExtractor:
             # 判断是否为AI生成图片
             metadata.is_ai_generated = self._is_ai_generated(metadata)
             
-            self.logger.info("AI metadata extracted", 
-                           path=str(image_path),
-                           is_ai_generated=metadata.is_ai_generated,
-                           software=metadata.generation_software)
+            self.logger.info("AI metadata extracted: path=%s, is_ai_generated=%s, software=%s", str(image_path), metadata.is_ai_generated, metadata.generation_software)
             
             return metadata
             
         except Exception as e:
-            self.logger.error("Failed to extract AI metadata", 
-                            path=str(image_path),
-                            error=str(e))
+            self.logger.error("Failed to extract AI metadata: path=%s, error=%s", str(image_path), str(e))
             return AIMetadata()
     
     def _extract_png_metadata(self, img: Image.Image, metadata: AIMetadata) -> AIMetadata:
@@ -168,7 +163,7 @@ class AIMetadataExtractor:
                 metadata.raw_metadata = dict(img.info)
         
         except Exception as e:
-            self.logger.error("Failed to extract PNG metadata", error=str(e))
+            self.logger.error(f"Failed to extract PNG metadata: {str(e)}")
         
         return metadata
     
@@ -193,7 +188,7 @@ class AIMetadataExtractor:
                     metadata = self._parse_image_description(image_desc, metadata)
         
         except Exception as e:
-            self.logger.error("Failed to extract EXIF metadata", error=str(e))
+            self.logger.error(f"Failed to extract EXIF metadata: {str(e)}")
         
         return metadata
     
@@ -212,7 +207,7 @@ class AIMetadataExtractor:
                 metadata.size = f"{width}x{height}"
         
         except Exception as e:
-            self.logger.error("Failed to extract filename metadata", error=str(e))
+            self.logger.error(f"Failed to extract filename metadata: {str(e)}")
         
         return metadata
     
@@ -281,7 +276,7 @@ class AIMetadataExtractor:
                 metadata.denoising_strength = float(denoising_match.group(1))
         
         except Exception as e:
-            self.logger.error("Failed to parse WebUI parameters", error=str(e))
+            self.logger.error(f"Failed to parse WebUI parameters: {str(e)}")
         
         return metadata
     
@@ -311,43 +306,116 @@ class AIMetadataExtractor:
                         pass
         
         except Exception as e:
-            self.logger.error("Failed to parse ComfyUI metadata", error=str(e))
+            self.logger.error(f"Failed to parse ComfyUI metadata: {str(e)}")
         
         return metadata
     
     def _extract_comfyui_prompt_data(self, prompt_data: Dict[str, Any], metadata: AIMetadata) -> AIMetadata:
         """从ComfyUI prompt数据中提取信息"""
         try:
+            # 收集所有文本编码节点的信息
+            text_encode_nodes = []
+            
             # 遍历所有节点
             for node_id, node_data in prompt_data.items():
                 if isinstance(node_data, dict):
-                    # 检查KSampler节点
-                    if node_data.get('class_type') == 'KSampler':
+                    class_type = node_data.get('class_type', '')
+                    
+                    # 检查KSampler节点 (包括各种变体)
+                    if 'KSampler' in class_type or 'sampler' in class_type.lower():
                         if 'inputs' in node_data:
                             inputs = node_data['inputs']
-                            if 'seed' in inputs:
+                            if not metadata.seed and 'seed' in inputs:
                                 metadata.seed = int(inputs['seed'])
-                            if 'steps' in inputs:
+                            if not metadata.steps and 'steps' in inputs:
                                 metadata.steps = int(inputs['steps'])
-                            if 'cfg' in inputs:
+                            if not metadata.cfg_scale and 'cfg' in inputs:
                                 metadata.cfg_scale = float(inputs['cfg'])
-                            if 'sampler_name' in inputs:
+                            if not metadata.sampler and 'sampler_name' in inputs:
                                 metadata.sampler = str(inputs['sampler_name'])
+                            if not metadata.denoising_strength and 'denoise' in inputs:
+                                metadata.denoising_strength = float(inputs['denoise'])
                     
-                    # 检查CheckpointLoaderSimple节点
-                    elif node_data.get('class_type') == 'CheckpointLoaderSimple':
-                        if 'inputs' in node_data and 'ckpt_name' in node_data['inputs']:
-                            metadata.model_name = str(node_data['inputs']['ckpt_name'])
+                    # 检查各种模型加载节点
+                    elif any(loader in class_type for loader in ['CheckpointLoader', 'Loader', 'easy a1111Loader', 'Efficient Loader']):
+                        if 'inputs' in node_data:
+                            inputs = node_data['inputs']
+                            if not metadata.model_name and 'ckpt_name' in inputs:
+                                metadata.model_name = str(inputs['ckpt_name'])
+                            elif not metadata.model_name and 'model_name' in inputs:
+                                metadata.model_name = str(inputs['model_name'])
                     
-                    # 检查CLIPTextEncode节点（正面提示词）
-                    elif node_data.get('class_type') == 'CLIPTextEncode':
+                    # 检查Lora加载节点
+                    elif 'Lora' in class_type or 'LoRA' in class_type:
+                        if 'inputs' in node_data:
+                            inputs = node_data['inputs']
+                            if not metadata.lora_name and 'lora_name' in inputs:
+                                metadata.lora_name = str(inputs['lora_name'])
+                            if not metadata.lora_weight and 'strength_model' in inputs:
+                                metadata.lora_weight = float(inputs['strength_model'])
+                    
+                    # 收集所有文本编码节点
+                    elif 'CLIPTextEncode' in class_type or 'TextEncode' in class_type or 'Prompts' in class_type:
                         if 'inputs' in node_data and 'text' in node_data['inputs']:
                             text = node_data['inputs']['text']
                             if isinstance(text, str) and text.strip():
-                                metadata.positive_prompt = text.strip()
+                                text_encode_nodes.append({
+                                    'node_id': node_id,
+                                    'text': text.strip(),
+                                    'class_type': class_type
+                                })
+                    
+                    # 检查图片尺寸节点
+                    elif 'EmptyLatentImage' in class_type or 'LatentImage' in class_type:
+                        if 'inputs' in node_data:
+                            inputs = node_data['inputs']
+                            if not metadata.size and 'width' in inputs and 'height' in inputs:
+                                width = inputs['width']
+                                height = inputs['height']
+                                metadata.size = f"{width}x{height}"
+            
+            # 处理文本编码节点 - 智能分配正面和负面提示词
+            if text_encode_nodes:
+                # 按文本长度排序，通常正面提示词更长
+                text_encode_nodes.sort(key=lambda x: len(x['text']), reverse=True)
+                
+                # 如果只有一个文本节点，作为正面提示词
+                if len(text_encode_nodes) == 1:
+                    metadata.positive_prompt = text_encode_nodes[0]['text']
+                
+                # 如果有多个文本节点，尝试智能分配
+                elif len(text_encode_nodes) >= 2:
+                    # 检查是否有明显的负面提示词特征
+                    negative_keywords = ['bad', 'worst', 'low quality', 'blurry', 'ugly', 'deformed', 'nsfw']
+                    
+                    positive_assigned = False
+                    negative_assigned = False
+                    
+                    for node in text_encode_nodes:
+                        text = node['text'].lower()
+                        
+                        # 如果包含负面关键词，作为负面提示词
+                        if not negative_assigned and any(keyword in text for keyword in negative_keywords):
+                            metadata.negative_prompt = node['text']
+                            negative_assigned = True
+                        
+                        # 否则，如果还没有正面提示词，作为正面提示词
+                        elif not positive_assigned:
+                            metadata.positive_prompt = node['text']
+                            positive_assigned = True
+                        
+                        # 如果都已分配，退出循环
+                        if positive_assigned and negative_assigned:
+                            break
+                    
+                    # 如果没有找到明显的负面提示词，使用最长的作为正面，第二长的作为负面
+                    if not negative_assigned and len(text_encode_nodes) >= 2:
+                        if not positive_assigned:
+                            metadata.positive_prompt = text_encode_nodes[0]['text']
+                        metadata.negative_prompt = text_encode_nodes[1]['text']
         
         except Exception as e:
-            self.logger.error("Failed to extract ComfyUI prompt data", error=str(e))
+            self.logger.error(f"Failed to extract ComfyUI prompt data: {str(e)}")
         
         return metadata
     
@@ -449,7 +517,7 @@ class AIMetadataExtractor:
                     metadata.raw_metadata['workflow_summary'] = workflow_summary
         
         except Exception as e:
-            self.logger.error("Failed to extract ComfyUI workflow data", error=str(e))
+            self.logger.error(f"Failed to extract ComfyUI workflow data: {str(e)}")
         
         return metadata
     
@@ -486,7 +554,7 @@ class AIMetadataExtractor:
             return ' | '.join(summary_parts) if summary_parts else ""
             
         except Exception as e:
-            self.logger.error("Failed to generate workflow summary", error=str(e))
+            self.logger.error(f"Failed to generate workflow summary: {str(e)}")
             return ""
     
     def _parse_midjourney_metadata(self, image_description: str, metadata: AIMetadata) -> AIMetadata:
@@ -569,7 +637,7 @@ class AIMetadataExtractor:
             }
         
         except Exception as e:
-            self.logger.error("Failed to parse Midjourney metadata", error=str(e))
+            self.logger.error(f"Failed to parse Midjourney metadata: {str(e)}")
         
         return metadata
     
@@ -592,7 +660,7 @@ class AIMetadataExtractor:
                 pass
         
         except Exception as e:
-            self.logger.error("Failed to parse user comment", error=str(e))
+            self.logger.error(f"Failed to parse user comment: {str(e)}")
         
         return metadata
     
@@ -604,7 +672,7 @@ class AIMetadataExtractor:
                 metadata.positive_prompt = image_desc.strip()
         
         except Exception as e:
-            self.logger.error("Failed to parse image description", error=str(e))
+            self.logger.error(f"Failed to parse image description: {str(e)}")
         
         return metadata
     

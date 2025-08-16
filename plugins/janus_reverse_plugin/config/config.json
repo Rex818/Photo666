@@ -1,0 +1,59 @@
+{
+    "models": {
+        "available_models": [
+            {
+                "id": "deepseek-ai/Janus-Pro-1B",
+                "name": "Janus-Pro-1B",
+                "description": "轻量级模型，速度快，适合快速反推",
+                "size": "1B",
+                "download_url": "https://huggingface.co/deepseek-ai/Janus-Pro-1B",
+                "local_path": null,
+                "is_downloaded": false
+            },
+            {
+                "id": "deepseek-ai/Janus-Pro-7B",
+                "name": "Janus-Pro-7B",
+                "description": "高质量模型，精度高，适合详细分析",
+                "size": "7B",
+                "download_url": "https://huggingface.co/deepseek-ai/Janus-Pro-7B",
+                "local_path": null,
+                "is_downloaded": false
+            }
+        ],
+        "default_model": "deepseek-ai/Janus-Pro-1B",
+        "models_directory": "models"
+    },
+    "reverse_inference": {
+        "question": "Describe this image in detail.",
+        "temperature": 0.1,
+        "top_p": 0.95,
+        "max_new_tokens": 512,
+        "seed": 666666666,
+        "save_results": true,
+        "result_file_suffix": ".txt"
+    },
+    "image_generation": {
+        "prompt": "",
+        "cfg_weight": 5.0,
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "batch_size": 1,
+        "image_size": 384,
+        "seed": 12345
+    },
+    "system": {
+        "use_gpu": true,
+        "max_memory_usage": 0.8,
+        "cache_enabled": true,
+        "cache_size": 100,
+        "cache_timeout": 3600
+    },
+    "model": {
+        "model_id": "deepseek-ai/Janus-Pro-1B",
+        "model_path": "",
+        "auto_download": true
+    },
+    "image_selection": {
+        "selected_images": []
+    }
+}

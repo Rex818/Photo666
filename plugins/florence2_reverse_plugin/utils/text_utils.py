@@ -4,9 +4,9 @@
 
 import re
 from typing import List, Dict, Any
-import structlog
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TextUtils:
@@ -64,7 +64,7 @@ class TextUtils:
             return tags
             
         except Exception as e:
-            logger.error("解析标签失败", error=str(e))
+            logger.error("解析标签失败: %s", str(e))
             return []
     
     @staticmethod
@@ -83,7 +83,7 @@ class TextUtils:
             return text.strip()
             
         except Exception as e:
-            logger.error("清理文本失败", error=str(e))
+            logger.error("清理文本失败: %s", str(e))
             return text
     
     @staticmethod
@@ -115,7 +115,7 @@ class TextUtils:
             return keywords
             
         except Exception as e:
-            logger.error("提取关键词失败", error=str(e))
+            logger.error("提取关键词失败: %s", str(e))
             return []
     
     @staticmethod
@@ -135,7 +135,7 @@ class TextUtils:
             return text
             
         except Exception as e:
-            logger.error("格式化描述失败", error=str(e))
+            logger.error("格式化描述失败: %s", str(e))
             return text
     
     @staticmethod
@@ -154,7 +154,7 @@ class TextUtils:
             return sentences
             
         except Exception as e:
-            logger.error("分割句子失败", error=str(e))
+            logger.error("分割句子失败: %s", str(e))
             return [text]
     
     @staticmethod
@@ -168,7 +168,7 @@ class TextUtils:
             return len(words)
             
         except Exception as e:
-            logger.error("统计单词数量失败", error=str(e))
+            logger.error("统计单词数量失败: %s", str(e))
             return 0
     
     @staticmethod
@@ -183,7 +183,7 @@ class TextUtils:
             return bool(chinese_pattern.search(text))
             
         except Exception as e:
-            logger.error("检查中文文本失败", error=str(e))
+            logger.error("检查中文文本失败: %s", str(e))
             return False
     
     @staticmethod
@@ -215,5 +215,5 @@ class TextUtils:
             return content
             
         except Exception as e:
-            logger.error("格式化文件内容失败", error=str(e))
+            logger.error("格式化文件内容失败: %s", str(e))
             return result 

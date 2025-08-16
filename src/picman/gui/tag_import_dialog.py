@@ -22,12 +22,14 @@ class TagImportWorker(QThread):
     import_finished = Signal(dict)  # results
     import_error = Signal(str)  # error message
     
-    def __init__(self, photo_paths: List[str], tag_type: str, language: str, db_manager):
+    def __init__(self, photo_paths: List[str], tag_type: str, language: str, db_manager, clear_existing: bool = False, append_tags: bool = True):
         super().__init__()
         self.photo_paths = photo_paths
         self.tag_type = tag_type  # 'normal', 'simple', 'detailed'
         self.language = language  # 'chinese', 'english'
         self.db_manager = db_manager
+        self.clear_existing = clear_existing
+        self.append_tags = append_tags
         self.cancelled = False
         
     def run(self):
@@ -104,7 +106,7 @@ class TagImportWorker(QThread):
             return None
             
         except Exception as e:
-            print(f"查找标签文件失败: {str(e)}")
+            self.logger.error(f"查找标签文件失败: {str(e)}")
             return None
             
     def read_tag_file(self, tag_file: str) -> Optional[str]:
@@ -143,7 +145,7 @@ class TagImportWorker(QThread):
             return None
             
         except Exception as e:
-            print(f"读取标签文件失败 {tag_file}: {str(e)}")
+            self.logger.error(f"读取标签文件失败 {tag_file}: {str(e)}")
             return None
             
     def _is_chinese_text(self, text: str) -> bool:
@@ -170,21 +172,9 @@ class TagImportWorker(QThread):
     def import_tags_to_database(self, photo_path: str, tags: str) -> bool:
         """导入标签到数据库"""
         try:
-            import json
-            
-            # 根据用户选择的标签类型确定数据库字段（这是显示区域，不是内容类型）
-            field_mapping = {
-                'normal': 'normal_tags',
-                'simple': 'simple_tags',
-                'detailed': 'detailed_tags'
-            }
-            
-            field_name = field_mapping.get(self.tag_type)
-            if not field_name:
-                return False
-            
             # 解析新标签
             try:
+                import json
                 new_tags_list = json.loads(tags) if tags else []
             except:
                 new_tags_list = [tags] if tags else []
@@ -192,51 +182,109 @@ class TagImportWorker(QThread):
             # 分离中英文标签
             english_tags, chinese_tags = self._separate_tags_by_language(new_tags_list)
             
+            # 根据用户选择的标签类型确定数据库字段
+            field_mapping = {
+                'simple': ('simple_tags_en', 'simple_tags_cn'),
+                'normal': ('general_tags_en', 'general_tags_cn'),
+                'detailed': ('detailed_tags_en', 'detailed_tags_cn')
+            }
+            
+            en_field, cn_field = field_mapping.get(self.tag_type, ('general_tags_en', 'general_tags_cn'))
+            
             # 读取现有的标签数据
-            query = f"SELECT {field_name}, tag_translations FROM photos WHERE filepath = ?"
+            query = f"SELECT {en_field}, {cn_field} FROM photos WHERE filepath = ?"
             result = self.db_manager.fetch_one(query, (photo_path,))
             
             if result:
-                existing_tags = result[0] if result[0] else '[]'
-                existing_translations = result[1] if result[1] else '{}'
+                existing_en_tags = result[0] if result[0] else ''
+                existing_cn_tags = result[1] if result[1] else ''
             else:
-                existing_tags = '[]'
-                existing_translations = '{}'
+                existing_en_tags = ''
+                existing_cn_tags = ''
             
-            # 解析现有数据
-            try:
-                existing_tags_list = json.loads(existing_tags) if existing_tags else []
-                existing_translations_dict = json.loads(existing_translations) if existing_translations else {}
-            except:
-                existing_tags_list = []
-                existing_translations_dict = {}
+            # 如果选择清空现有标签，先清空
+            if self.clear_existing:
+                existing_en_tags = ''
+                existing_cn_tags = ''
             
-            # 根据用户选择的语言进行导入
+            # 根据用户选择的语言和追加选项进行导入
             if self.language == 'chinese':
-                # 用户选择中文：将标签导入到用户指定的区域，中文标签作为翻译
-                final_tags = existing_tags_list + english_tags
-                final_translations = existing_translations_dict.copy()
-                for tag in chinese_tags:
-                    # 为中文标签生成一个英文键
-                    english_key = f"chinese_tag_{len(final_translations)}"
-                    final_translations[english_key] = tag
+                # 用户选择中文：英文标签作为主标签，中文标签作为翻译
+                if english_tags:
+                    if self.append_tags and existing_en_tags.strip():
+                        final_en_tags = existing_en_tags + ', ' + ', '.join(english_tags)
+                    else:
+                        final_en_tags = ', '.join(english_tags)
+                else:
+                    final_en_tags = existing_en_tags if self.append_tags else ''
+                
+                if chinese_tags:
+                    if self.append_tags and existing_cn_tags.strip():
+                        final_cn_tags = existing_cn_tags + ', ' + ', '.join(chinese_tags)
+                    else:
+                        final_cn_tags = ', '.join(chinese_tags)
+                else:
+                    final_cn_tags = existing_cn_tags if self.append_tags else ''
             else:
-                # 用户选择英文：将标签导入到用户指定的区域，英文标签作为主标签
-                final_tags = existing_tags_list + english_tags
-                final_translations = existing_translations_dict.copy()
-                for tag in chinese_tags:
-                    # 为中文标签生成一个英文键
-                    english_key = f"chinese_tag_{len(final_translations)}"
-                    final_translations[english_key] = tag
+                # 用户选择英文：英文标签作为主标签
+                if english_tags:
+                    if self.append_tags and existing_en_tags.strip():
+                        final_en_tags = existing_en_tags + ', ' + ', '.join(english_tags)
+                    else:
+                        final_en_tags = ', '.join(english_tags)
+                else:
+                    final_en_tags = existing_en_tags if self.append_tags else ''
+                
+                if chinese_tags:
+                    if self.append_tags and existing_cn_tags.strip():
+                        final_cn_tags = existing_cn_tags + ', ' + ', '.join(chinese_tags)
+                    else:
+                        final_cn_tags = ', '.join(chinese_tags)
+                else:
+                    final_cn_tags = existing_cn_tags if self.append_tags else ''
             
-            # 更新数据库
-            update_query = f"UPDATE photos SET {field_name} = ?, tag_translations = ? WHERE filepath = ?"
-            success = self.db_manager.execute(update_query, (json.dumps(final_tags), json.dumps(final_translations), photo_path))
+            # 使用统一标签系统更新数据库
+            # 首先获取当前照片数据
+            photo_query = "SELECT id FROM photos WHERE filepath = ?"
+            photo_result = self.db_manager.fetch_one(photo_query, (photo_path,))
+            
+            if not photo_result:
+                return False
+            
+            photo_id = photo_result[0]
+            
+            # 获取当前照片的统一标签数据
+            photo_data = self.db_manager.get_photo(photo_id)
+            if not photo_data:
+                return False
+            
+            # 读取现有的统一标签数据
+            from src.picman.database.manager import UnifiedTagsAccessor
+            unified_tags = UnifiedTagsAccessor.read_unified_tags(photo_data)
+            
+            # 更新对应的标签类型和语言
+            category_mapping = {
+                'simple': 'simple',
+                'normal': 'normal', 
+                'detailed': 'detailed'
+            }
+            
+            category = category_mapping.get(self.tag_type, 'normal')
+            
+            # 更新统一标签结构
+            if category in unified_tags:
+                unified_tags[category]["en"] = final_en_tags
+                unified_tags[category]["zh"] = final_cn_tags
+            
+            # 使用统一标签系统保存（会自动双写）
+            success = self.db_manager.update_photo(photo_id, {
+                "unified_tags_data": unified_tags
+            })
             
             return success
             
         except Exception as e:
-            print(f"导入标签到数据库失败: {str(e)}")
+            self.logger.error(f"导入标签到数据库失败: {str(e)}")
             return False
             
     def cancel(self):
@@ -305,10 +353,20 @@ class TagImportDialog(QDialog):
         
         layout.addWidget(language_group)
         
-        # 覆盖选项
-        self.overwrite_checkbox = QCheckBox("覆盖现有标签")
-        self.overwrite_checkbox.setChecked(True)
-        layout.addWidget(self.overwrite_checkbox)
+        # 导入选项
+        options_group = QGroupBox("导入选项")
+        options_layout = QVBoxLayout(options_group)
+        
+        self.clear_existing_checkbox = QCheckBox("清空已存在照片的标签")
+        self.clear_existing_checkbox.setToolTip("导入前先清空照片的所有标签信息")
+        options_layout.addWidget(self.clear_existing_checkbox)
+        
+        self.append_tags_checkbox = QCheckBox("追加到现有标签")
+        self.append_tags_checkbox.setChecked(True)
+        self.append_tags_checkbox.setToolTip("将新标签追加到现有标签后面，而不是覆盖")
+        options_layout.addWidget(self.append_tags_checkbox)
+        
+        layout.addWidget(options_group)
         
         # 统计信息
         stats_group = QGroupBox("统计信息")
@@ -383,7 +441,9 @@ class TagImportDialog(QDialog):
             
             # 创建工作线程
             self.import_worker = TagImportWorker(
-                self.photo_paths, tag_type, language, self.db_manager
+                self.photo_paths, tag_type, language, self.db_manager,
+                clear_existing=self.clear_existing_checkbox.isChecked(),
+                append_tags=self.append_tags_checkbox.isChecked()
             )
             self.import_worker.progress_updated.connect(self.update_progress)
             self.import_worker.import_finished.connect(self.import_finished)

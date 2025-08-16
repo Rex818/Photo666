@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QImage
-import structlog
+import logging
 from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 
@@ -163,7 +163,9 @@ class PhotoEditorDialog(QDialog):
         self.photo_path = photo_path
         self.original_image = None
         self.current_image = None
-        self.logger = structlog.get_logger("picman.gui.photo_editor")
+        # 配置标准logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger("picman.gui.photo_editor")
         
         # 编辑参数
         self.brightness = 1.0
@@ -449,9 +451,9 @@ class PhotoEditorDialog(QDialog):
             self.original_image = Image.open(self.photo_path)
             self.current_image = self.original_image.copy()
             self.update_display()
-            self.logger.info("Image loaded successfully", path=self.photo_path)
+            self.logger.info("Image loaded successfully: %s", self.photo_path)
         except Exception as e:
-            self.logger.error("Failed to load image", error=str(e))
+            self.logger.error("Failed to load image: %s", str(e))
             QMessageBox.critical(self, "错误", f"无法加载图片: {str(e)}")
     
     def update_display(self):
@@ -552,7 +554,7 @@ class PhotoEditorDialog(QDialog):
             self.update_display()
             
         except Exception as e:
-            self.logger.error("Failed to apply adjustments", error=str(e))
+            self.logger.error("Failed to apply adjustments: %s", str(e))
     
     def reset_adjustments(self):
         """重置调整"""
@@ -607,7 +609,7 @@ class PhotoEditorDialog(QDialog):
             self.update_display()
             
         except Exception as e:
-            self.logger.error("Failed to apply filter", error=str(e))
+            self.logger.error("Failed to apply filter: %s", str(e))
     
     def rotate_image(self, angle: int):
         """旋转图片"""
@@ -634,7 +636,7 @@ class PhotoEditorDialog(QDialog):
             QMessageBox.information(self, "成功", "图片保存成功！")
             self.accept()
         except Exception as e:
-            self.logger.error("Failed to save image", error=str(e))
+            self.logger.error("Failed to save image: %s", str(e))
             QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
     
     def save_as_image(self):
@@ -651,5 +653,5 @@ class PhotoEditorDialog(QDialog):
                 self.current_image.save(file_path)
                 QMessageBox.information(self, "成功", "图片保存成功！")
             except Exception as e:
-                self.logger.error("Failed to save image as", error=str(e))
+                self.logger.error("Failed to save image as: %s", str(e))
                 QMessageBox.critical(self, "错误", f"保存失败: {str(e)}") 

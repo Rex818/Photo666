@@ -2,13 +2,18 @@
 Language manager for PyPhotoManager.
 """
 
-from typing import Dict, List, Optional
-from pathlib import Path
 import os
-import glob
-import structlog
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 from PyQt6.QtCore import QTranslator, QLocale, QCoreApplication
 from ..config.manager import ConfigManager
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class LanguageManager:
@@ -21,7 +26,7 @@ class LanguageManager:
             config_manager: The application configuration manager.
         """
         self.config_manager = config_manager
-        self.logger = structlog.get_logger()
+        self.logger = logger
         self.translator = QTranslator()
         self.current_language = None
         self.available_languages = self._get_available_languages()
@@ -67,10 +72,10 @@ class LanguageManager:
                                 "native_name": native_name
                             }
                     except Exception as e:
-                        self.logger.warning("Failed to process language file", 
-                                          file=str(file_path), error=str(e))
+                        self.logger.warning("Failed to process language file %s: %s", 
+                                          str(file_path), str(e))
         except Exception as e:
-            self.logger.error("Error scanning translation files", error=str(e))
+            self.logger.error(f"Error scanning translation files: {str(e)}")
         
         return languages
         
@@ -117,7 +122,7 @@ class LanguageManager:
             True if language was set successfully, False otherwise.
         """
         if language_code not in self.available_languages:
-            self.logger.error("Language not available", language_code=language_code)
+            self.logger.error(f"Language not available: {language_code}")
             return False
         
         # Remove previous translator if exists
@@ -132,8 +137,8 @@ class LanguageManager:
         
         # Check if compiled translation file exists, if not, try to load from .ts file
         if not translation_path.exists():
-            self.logger.warning("Compiled translation file not found, using source file", 
-                               file=str(translation_path))
+            self.logger.warning("Compiled translation file not found, using source file: %s", 
+                               str(translation_path))
             
             # In production, we should compile the .ts file to .qm
             # For development, we can use the .ts file directly
@@ -141,7 +146,7 @@ class LanguageManager:
             translation_path = translations_dir / translation_file
         
         if not translation_path.exists():
-            self.logger.error("Translation file not found", file=str(translation_path))
+            self.logger.error("Translation file not found: %s", str(translation_path))
             return False
         
         # Try to load the translation file
@@ -149,24 +154,24 @@ class LanguageManager:
         
         # If loading fails and it's a .qm file, it might be our simplified format
         if not success and translation_path.suffix.lower() == '.qm':
-            self.logger.warning("Failed to load standard .qm file, trying simplified format", 
-                              file=str(translation_path))
+            self.logger.warning("Failed to load standard .qm file, trying simplified format: %s", 
+                              str(translation_path))
             try:
                 # Try to load our simplified format
                 success = self._load_simplified_qm(translation_path, language_code)
             except Exception as e:
-                self.logger.error("Failed to load simplified .qm file", 
-                                file=str(translation_path), error=str(e))
+                self.logger.error("Failed to load simplified .qm file %s: %s", 
+                                str(translation_path), str(e))
                 success = False
         
         if success:
             QCoreApplication.installTranslator(self.translator)
             self.current_language = language_code
             self.config_manager.set("ui.language", language_code)
-            self.logger.info("Language changed", language=language_code)
+            self.logger.info("Language changed: %s", language_code)
             return True
         else:
-            self.logger.error("Failed to load translation", file=str(translation_path))
+            self.logger.error("Failed to load translation: %s", str(translation_path))
             return False
             
     def _load_simplified_qm(self, file_path: Path, language_code: str) -> bool:
@@ -184,7 +189,7 @@ class LanguageManager:
                 # Check magic number
                 magic = f.read(5)
                 if magic != b'PyQM\x01':
-                    self.logger.error("Invalid simplified .qm file format", file=str(file_path))
+                    self.logger.error("Invalid simplified .qm file format: %s", str(file_path))
                     return False
                 
                 # Create a custom translator
@@ -217,17 +222,15 @@ class LanguageManager:
                         # Since we can't directly add translations to QTranslator,
                         # we'll need to implement a custom solution in a real app
                         # For now, we'll just log the translations
-                        self.logger.debug("Loaded translation", 
-                                        context=context_name, 
-                                        source=source, 
-                                        translation=translation)
+                        self.logger.debug("Loaded translation: context=%s, source=%s, translation=%s", 
+                                        context_name, source, translation)
             
-            self.logger.info("Successfully loaded simplified .qm file", file=str(file_path))
+            self.logger.info("Successfully loaded simplified .qm file: %s", str(file_path))
             return True
             
         except Exception as e:
-            self.logger.error("Error loading simplified .qm file", 
-                            file=str(file_path), error=str(e))
+            self.logger.error("Error loading simplified .qm file %s: %s", 
+                            str(file_path), str(e))
             return False
     
     def initialize(self) -> None:

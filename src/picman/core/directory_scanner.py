@@ -5,7 +5,7 @@ Directory scanner for automatically finding and importing images.
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Set, Generator
-import structlog
+import logging
 
 
 class DirectoryScanner:
@@ -13,7 +13,7 @@ class DirectoryScanner:
     
     def __init__(self, config=None):
         self.config = config
-        self.logger = structlog.get_logger("picman.core.directory_scanner")
+        self.logger = logging.getLogger("picman.core.directory_scanner")
         
         # Default supported formats if not specified in config
         self.supported_formats = self.config.get("import_settings.supported_formats", 
@@ -34,7 +34,7 @@ class DirectoryScanner:
             directory = Path(directory_path)
             
             if not directory.exists() or not directory.is_dir():
-                self.logger.error("Directory not found", path=str(directory))
+                self.logger.error(f"Directory not found: {str(directory)}")
                 return
             
             # Walk through directory
@@ -50,12 +50,10 @@ class DirectoryScanner:
                     if item.is_file() and self._is_supported_file(item):
                         yield item
                         
-            self.logger.info("Directory scan completed", path=str(directory))
+            self.logger.info(f"Directory scan completed: {str(directory)}")
             
         except Exception as e:
-            self.logger.error("Error scanning directory", 
-                            path=str(directory_path), 
-                            error=str(e))
+            self.logger.error("Error scanning directory: path=%s, error=%s", str(directory_path), str(e))
     
     def find_image_directories(self, root_path: str, min_images: int = 5) -> List[Dict[str, Any]]:
         """
@@ -71,7 +69,7 @@ class DirectoryScanner:
         try:
             root = Path(root_path)
             if not root.exists() or not root.is_dir():
-                self.logger.error("Root directory not found", path=str(root))
+                self.logger.error(f"Root directory not found: {str(root)}")
                 return []
             
             result = []
@@ -97,16 +95,12 @@ class DirectoryScanner:
             # Sort by image count (descending)
             result.sort(key=lambda x: x["image_count"], reverse=True)
             
-            self.logger.info("Found image directories", 
-                           count=len(result), 
-                           root=str(root))
+            self.logger.info("Found image directories: count=%s, root=%s", len(result), str(root))
             
             return result
             
         except Exception as e:
-            self.logger.error("Error finding image directories", 
-                            path=str(root_path), 
-                            error=str(e))
+            self.logger.error("Error finding image directories: path=%s, error=%s", str(root_path), str(e))
             return []
     
     def _is_supported_file(self, file_path: Path) -> bool:

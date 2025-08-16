@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "models": {
-    "default_model": "fancyfeast/llama-joycaption-beta-one-hf-llava",
+    "default_model": "fancyfeast/llama-joycaption-alpha-two-hf-llava",
     "available_models": [
       "fancyfeast/llama-joycaption-beta-one-hf-llava",
       "fancyfeast/llama-joycaption-alpha-two-hf-llava"
@@ -11,12 +11,13 @@
       "../models"
     ],
     "custom_local_paths": [
-      "E:/Cursor-test/llama-joycaption-beta-one-hf-llava"
+      "E:/models/llama-joycaption-beta-one-hf-llava",
+      "E:/models/llama-joycaption-alpha-two-hf-llava"
     ]
   },
   "inference": {
     "precision": "Balanced (8-bit)",
-    "max_new_tokens": 512,
+    "max_new_tokens": 1024,
     "temperature": 0.8,
     "top_p": 0.95,
     "top_k": 0,

@@ -104,7 +104,7 @@ class BaseLocationAPI(ABC):
         
         if elapsed < min_interval:
             sleep_time = min_interval - elapsed
-            self.logger.debug("Rate limiting", sleep_time=sleep_time)
+            self.logger.debug("Rate limiting: sleep_time=%s", sleep_time)
             time.sleep(sleep_time)
         
         self.last_request_time = time.time()
@@ -208,8 +208,7 @@ class NominatimAPI(BaseLocationAPI):
                 'User-Agent': self.user_agent
             }
             
-            self.logger.debug("Querying Nominatim", 
-                            lat=coordinate.latitude, lon=coordinate.longitude)
+            self.logger.debug("Querying Nominatim: lat=%s, lon=%s", coordinate.latitude, coordinate.longitude)
             
             response_data = self._make_request(self.base_url, params, headers)
             
@@ -258,8 +257,7 @@ class NominatimAPI(BaseLocationAPI):
                 source_api=self.get_api_name()
             )
             
-            self.logger.debug("Nominatim response parsed", 
-                            location=location_info.to_display_string("short"))
+            self.logger.debug("Nominatim response parsed: location=%s", location_info.to_display_string("short"))
             return location_info
             
         except Exception as e:
@@ -301,8 +299,7 @@ class GoogleMapsAPI(BaseLocationAPI):
                 'language': 'zh-CN'
             }
             
-            self.logger.debug("Querying Google Maps", 
-                            lat=coordinate.latitude, lon=coordinate.longitude)
+            self.logger.debug("Querying Google Maps: lat=%s, lon=%s", coordinate.latitude, coordinate.longitude)
             
             response_data = self._make_request(self.base_url, params)
             
@@ -362,8 +359,7 @@ class GoogleMapsAPI(BaseLocationAPI):
                 source_api=self.get_api_name()
             )
             
-            self.logger.debug("Google Maps response parsed", 
-                            location=location_info.to_display_string("short"))
+            self.logger.debug("Google Maps response parsed: location=%s", location_info.to_display_string("short"))
             return location_info
             
         except Exception as e:
@@ -406,8 +402,7 @@ class BaiduMapsAPI(BaseLocationAPI):
                 'coordtype': 'wgs84ll'  # WGS84坐标系
             }
             
-            self.logger.debug("Querying Baidu Maps", 
-                            lat=coordinate.latitude, lon=coordinate.longitude)
+            self.logger.debug("Querying Baidu Maps: lat=%s, lon=%s", coordinate.latitude, coordinate.longitude)
             
             response_data = self._make_request(self.base_url, params)
             
@@ -444,8 +439,7 @@ class BaiduMapsAPI(BaseLocationAPI):
                 source_api=self.get_api_name()
             )
             
-            self.logger.debug("Baidu Maps response parsed", 
-                            location=location_info.to_display_string("short"))
+            self.logger.debug("Baidu Maps response parsed: location=%s", location_info.to_display_string("short"))
             return location_info
             
         except Exception as e:
@@ -488,8 +482,7 @@ class AmapAPI(BaseLocationAPI):
                 'extensions': 'all'
             }
             
-            self.logger.debug("Querying Amap", 
-                            lat=coordinate.latitude, lon=coordinate.longitude)
+            self.logger.debug("Querying Amap: lat=%s, lon=%s", coordinate.latitude, coordinate.longitude)
             
             response_data = self._make_request(self.base_url, params)
             
@@ -526,8 +519,7 @@ class AmapAPI(BaseLocationAPI):
                 source_api=self.get_api_name()
             )
             
-            self.logger.debug("Amap response parsed", 
-                            location=location_info.to_display_string("short"))
+            self.logger.debug("Amap response parsed: location=%s", location_info.to_display_string("short"))
             return location_info
             
         except Exception as e:
@@ -560,9 +552,7 @@ class LocationAPIClient:
         # 设置优先级
         self.priority = self.config.get('priority', ['nominatim', 'google', 'baidu', 'amap'])
         
-        self.logger.info("Location API client initialized", 
-                        available_apis=list(self.apis.keys()),
-                        priority=self.priority)
+        self.logger.info("Location API client initialized: available_apis=%s, priority=%s", list(self.apis.keys()), self.priority)
     
     def _init_apis(self):
         """初始化API服务实例"""
@@ -603,28 +593,26 @@ class LocationAPIClient:
         for api_name in self.priority:
             api = self.apis.get(api_name)
             if not api or not api.is_available():
-                self.logger.debug("API not available", api=api_name)
+                self.logger.debug("API not available: api=%s", api_name)
                 continue
             
             try:
                 result = self._try_api(api, coordinate)
                 if result and not result.is_empty():
-                    self.logger.info("Location query successful", 
-                                   api=api_name, 
-                                   location=result.to_display_string("short"))
+                    self.logger.info("Location query successful: api=%s, location=%s", api_name, 
+                                   result.to_display_string("short"))
                     return result
                 else:
-                    self.logger.debug("API returned empty result", api=api_name)
+                    self.logger.debug("API returned empty result: api=%s", api_name)
                     
             except Exception as e:
                 last_error = e
-                self.logger.warning("API query failed", 
-                                  api=api_name, error=str(e))
+                self.logger.warning("API query failed: api=%s, error=%s", api_name, str(e))
                 continue
         
         # 所有API都失败了
         if last_error:
-            self.logger.error("All APIs failed", last_error=str(last_error))
+            self.logger.error("All APIs failed: last_error=%s", str(last_error))
         else:
             self.logger.error("No available APIs")
         
@@ -649,10 +637,8 @@ class LocationAPIClient:
                 # 速率限制错误，等待后重试
                 retry_after = e.details.get('retry_after', 60)
                 if attempt < retry_count - 1:
-                    self.logger.info("Rate limited, retrying", 
-                                   api=api.get_api_name(),
-                                   retry_after=retry_after,
-                                   attempt=attempt + 1)
+                    self.logger.info("Rate limited, retrying: api=%s, retry_after=%s, attempt=%s", api.get_api_name(),
+                                   retry_after, attempt + 1)
                     time.sleep(min(retry_after, 60))  # 最多等待60秒
                     continue
                 raise
@@ -660,11 +646,8 @@ class LocationAPIClient:
                 # 网络或响应错误，短暂等待后重试
                 if attempt < retry_count - 1:
                     wait_time = 2 ** attempt  # 指数退避
-                    self.logger.info("Retrying after error", 
-                                   api=api.get_api_name(),
-                                   error=str(e),
-                                   wait_time=wait_time,
-                                   attempt=attempt + 1)
+                    self.logger.info("Retrying after error: api=%s, error=%s, wait_time=%s, attempt=%s", api.get_api_name(),
+                                   str(e), wait_time, attempt + 1)
                     time.sleep(wait_time)
                     continue
                 raise
@@ -684,10 +667,10 @@ class LocationAPIClient:
             if api_name in self.apis:
                 valid_apis.append(api_name)
             else:
-                self.logger.warning("Unknown API in priority list", api=api_name)
+                self.logger.warning("Unknown API in priority list: api=%s", api_name)
         
         self.priority = valid_apis
-        self.logger.info("API priority updated", priority=self.priority)
+        self.logger.info("API priority updated: priority=%s", self.priority)
     
     def get_available_apis(self) -> List[str]:
         """获取可用的API列表

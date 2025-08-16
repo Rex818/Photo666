@@ -8,11 +8,11 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QDialog, QLineEdit, QColorDialog,
     QMessageBox, QInputDialog, QMenu, QFrame, QSplitter, QGroupBox,
-    QCheckBox, QTextEdit, QScrollArea
+    QCheckBox, QTextEdit, QScrollArea, QTabWidget
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QAction, QContextMenuEvent, QColor
-import structlog
+import logging
 
 from ..database.manager import DatabaseManager
 
@@ -110,17 +110,14 @@ class TagDialog(QDialog):
         return self.tag_data
 
 
-class TagManager(QWidget):
-    """Tag management widget."""
-    
-    tag_selected = pyqtSignal(int)  # tag_id
-    tags_updated = pyqtSignal()
+class AIImageInfoPanel(QWidget):
+    """AI图片信息面板"""
     
     def __init__(self, db_manager: DatabaseManager, album_manager=None):
         super().__init__()
         self.db_manager = db_manager
         self.album_manager = album_manager
-        self.logger = structlog.get_logger("picman.gui.tag_manager")
+        self.logger = logging.getLogger("picman.gui.ai_image_info_panel")
         
         # 当前选中的照片
         self.current_photo = None
@@ -129,39 +126,22 @@ class TagManager(QWidget):
         self.is_editing = False
         
         self.init_ui()
-        self.load_tags()
     
     def init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout(self)
         
-        # 创建分割器
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        # 创建AI图片信息面板（带滚动条）
+        scroll = QScrollArea()
+        widget = self.create_ai_info_panel()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        # 上半部分：AI图片信息（带滚动条）
-        top_scroll = QScrollArea()
-        top_widget = self.create_tag_management_panel()
-        top_scroll.setWidget(top_widget)
-        top_scroll.setWidgetResizable(True)
-        top_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        top_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        splitter.addWidget(top_scroll)
-        
-        # 下半部分：照片标签信息（带滚动条）
-        bottom_scroll = QScrollArea()
-        bottom_widget = self.create_photo_tags_panel()
-        bottom_scroll.setWidget(bottom_widget)
-        bottom_scroll.setWidgetResizable(True)
-        bottom_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        bottom_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        splitter.addWidget(bottom_scroll)
-        
-        # 设置分割器比例 - 调整AI图片信息和照片标签信息的比例
-        splitter.setSizes([200, 300])  # AI图片信息占200，照片标签信息占300
-        
-        layout.addWidget(splitter)
+        layout.addWidget(scroll)
     
-    def create_tag_management_panel(self) -> QWidget:
+    def create_ai_info_panel(self) -> QWidget:
         """创建AI图片信息面板"""
         panel = QGroupBox("AI图片信息")
         layout = QVBoxLayout(panel)
@@ -202,13 +182,13 @@ class TagManager(QWidget):
         # 模型信息区域
         model_group = QGroupBox("模型信息")
         model_layout = QVBoxLayout(model_group)
-        model_layout.setSpacing(5)
         
         # 模型名称
         model_name_layout = QHBoxLayout()
         model_name_layout.addWidget(QLabel("模型:"))
         self.model_name_edit = QLineEdit()
         self.model_name_edit.setPlaceholderText("输入模型名称...")
+        self.model_name_edit.setReadOnly(not self.is_editing)
         model_name_layout.addWidget(self.model_name_edit)
         model_layout.addLayout(model_name_layout)
         
@@ -217,6 +197,7 @@ class TagManager(QWidget):
         model_version_layout.addWidget(QLabel("版本:"))
         self.model_version_edit = QLineEdit()
         self.model_version_edit.setPlaceholderText("输入模型版本...")
+        self.model_version_edit.setReadOnly(not self.is_editing)
         model_version_layout.addWidget(self.model_version_edit)
         model_layout.addLayout(model_version_layout)
         
@@ -225,13 +206,13 @@ class TagManager(QWidget):
         # Lora信息区域
         lora_group = QGroupBox("Lora信息")
         lora_layout = QVBoxLayout(lora_group)
-        lora_layout.setSpacing(5)
         
         # Lora名称
         lora_name_layout = QHBoxLayout()
         lora_name_layout.addWidget(QLabel("Lora:"))
         self.lora_name_edit = QLineEdit()
         self.lora_name_edit.setPlaceholderText("输入Lora名称...")
+        self.lora_name_edit.setReadOnly(not self.is_editing)
         lora_name_layout.addWidget(self.lora_name_edit)
         lora_layout.addLayout(lora_name_layout)
         
@@ -240,292 +221,177 @@ class TagManager(QWidget):
         lora_weight_layout.addWidget(QLabel("权重:"))
         self.lora_weight_edit = QLineEdit()
         self.lora_weight_edit.setPlaceholderText("输入Lora权重...")
+        self.lora_weight_edit.setReadOnly(not self.is_editing)
         lora_weight_layout.addWidget(self.lora_weight_edit)
         lora_layout.addLayout(lora_weight_layout)
         
         ai_display_layout.addWidget(lora_group)
         
-        # Midjourney特有参数区域
-        mj_group = QGroupBox("Midjourney参数")
-        mj_layout = QVBoxLayout(mj_group)
-        mj_layout.setSpacing(5)
-        
-        # 第一行：任务ID、版本
-        mj_row1_layout = QHBoxLayout()
+        # Midjourney参数区域
+        midjourney_group = QGroupBox("Midjourney参数")
+        midjourney_layout = QVBoxLayout(midjourney_group)
         
         # 任务ID
-        mj_job_id_layout = QVBoxLayout()
-        mj_job_id_layout.addWidget(QLabel("任务ID:"))
-        self.mj_job_id_edit = QLineEdit()
-        self.mj_job_id_edit.setPlaceholderText("Midjourney任务ID...")
-        mj_job_id_layout.addWidget(self.mj_job_id_edit)
-        mj_row1_layout.addLayout(mj_job_id_layout)
+        task_id_layout = QHBoxLayout()
+        task_id_layout.addWidget(QLabel("任务ID:"))
+        self.task_id_edit = QLineEdit()
+        self.task_id_edit.setPlaceholderText("Midjourney任务ID...")
+        self.task_id_edit.setReadOnly(not self.is_editing)
+        task_id_layout.addWidget(self.task_id_edit)
+        midjourney_layout.addLayout(task_id_layout)
         
         # 版本
-        mj_version_layout = QVBoxLayout()
-        mj_version_layout.addWidget(QLabel("版本:"))
-        self.mj_version_edit = QLineEdit()
-        self.mj_version_edit.setPlaceholderText("Midjourney版本...")
-        mj_version_layout.addWidget(self.mj_version_edit)
-        mj_row1_layout.addLayout(mj_version_layout)
-        
-        mj_layout.addLayout(mj_row1_layout)
-        
-        # 第二行：风格化、质量、宽高比
-        mj_row2_layout = QHBoxLayout()
+        version_layout = QHBoxLayout()
+        version_layout.addWidget(QLabel("版本:"))
+        self.version_edit = QLineEdit()
+        self.version_edit.setPlaceholderText("Midjourney版本...")
+        self.version_edit.setReadOnly(not self.is_editing)
+        version_layout.addWidget(self.version_edit)
+        midjourney_layout.addLayout(version_layout)
         
         # 风格化
-        mj_stylize_layout = QVBoxLayout()
-        mj_stylize_layout.addWidget(QLabel("风格化:"))
-        self.mj_stylize_edit = QLineEdit()
-        self.mj_stylize_edit.setPlaceholderText("风格化参数...")
-        mj_stylize_layout.addWidget(self.mj_stylize_edit)
-        mj_row2_layout.addLayout(mj_stylize_layout)
+        stylize_layout = QHBoxLayout()
+        stylize_layout.addWidget(QLabel("风格化:"))
+        self.stylize_edit = QLineEdit()
+        self.stylize_edit.setPlaceholderText("风格化参数...")
+        self.stylize_edit.setReadOnly(not self.is_editing)
+        stylize_layout.addWidget(self.stylize_edit)
+        midjourney_layout.addLayout(stylize_layout)
         
         # 质量
-        mj_quality_layout = QVBoxLayout()
-        mj_quality_layout.addWidget(QLabel("质量:"))
-        self.mj_quality_edit = QLineEdit()
-        self.mj_quality_edit.setPlaceholderText("质量参数...")
-        mj_quality_layout.addWidget(self.mj_quality_edit)
-        mj_row2_layout.addLayout(mj_quality_layout)
+        quality_layout = QHBoxLayout()
+        quality_layout.addWidget(QLabel("质量:"))
+        self.quality_edit = QLineEdit()
+        self.quality_edit.setPlaceholderText("质量参数...")
+        self.quality_edit.setReadOnly(not self.is_editing)
+        quality_layout.addWidget(self.quality_edit)
+        midjourney_layout.addLayout(quality_layout)
         
         # 宽高比
-        mj_ar_layout = QVBoxLayout()
-        mj_ar_layout.addWidget(QLabel("宽高比:"))
-        self.mj_ar_edit = QLineEdit()
-        self.mj_ar_edit.setPlaceholderText("宽高比...")
-        mj_ar_layout.addWidget(self.mj_ar_edit)
-        mj_row2_layout.addLayout(mj_ar_layout)
+        aspect_ratio_layout = QHBoxLayout()
+        aspect_ratio_layout.addWidget(QLabel("宽高比:"))
+        self.aspect_ratio_edit = QLineEdit()
+        self.aspect_ratio_edit.setPlaceholderText("宽高比...")
+        self.aspect_ratio_edit.setReadOnly(not self.is_editing)
+        aspect_ratio_layout.addWidget(self.aspect_ratio_edit)
+        midjourney_layout.addLayout(aspect_ratio_layout)
         
-        mj_layout.addLayout(mj_row2_layout)
+        # 模式选择
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("模式:"))
         
-        # 第三行：特殊模式
-        mj_row3_layout = QHBoxLayout()
+        self.raw_mode_radio = QCheckBox("原始模式")
+        self.raw_mode_radio.setChecked(True)
+        self.raw_mode_radio.setEnabled(self.is_editing)
+        mode_layout.addWidget(self.raw_mode_radio)
         
-        # 原始模式
-        self.mj_raw_mode_checkbox = QCheckBox("原始模式")
-        mj_row3_layout.addWidget(self.mj_raw_mode_checkbox)
+        self.tile_mode_radio = QCheckBox("平铺模式")
+        self.tile_mode_radio.setEnabled(self.is_editing)
+        mode_layout.addWidget(self.tile_mode_radio)
         
-        # 平铺模式
-        self.mj_tile_checkbox = QCheckBox("平铺模式")
-        mj_row3_layout.addWidget(self.mj_tile_checkbox)
+        self.niji_mode_radio = QCheckBox("Niji模式")
+        self.niji_mode_radio.setEnabled(self.is_editing)
+        mode_layout.addWidget(self.niji_mode_radio)
         
-        # Niji模式
-        self.mj_niji_checkbox = QCheckBox("Niji模式")
-        mj_row3_layout.addWidget(self.mj_niji_checkbox)
-        
-        mj_row3_layout.addStretch()
-        mj_layout.addLayout(mj_row3_layout)
-        
-        # 第四行：混乱度、怪异度
-        mj_row4_layout = QHBoxLayout()
+        mode_layout.addStretch()
+        midjourney_layout.addLayout(mode_layout)
         
         # 混乱度
-        mj_chaos_layout = QVBoxLayout()
-        mj_chaos_layout.addWidget(QLabel("混乱度:"))
-        self.mj_chaos_edit = QLineEdit()
-        self.mj_chaos_edit.setPlaceholderText("混乱度参数...")
-        mj_chaos_layout.addWidget(self.mj_chaos_edit)
-        mj_row4_layout.addLayout(mj_chaos_layout)
+        chaos_layout = QHBoxLayout()
+        chaos_layout.addWidget(QLabel("混乱度:"))
+        self.chaos_edit = QLineEdit()
+        self.chaos_edit.setPlaceholderText("混乱度...")
+        self.chaos_edit.setReadOnly(not self.is_editing)
+        chaos_layout.addWidget(self.chaos_edit)
+        midjourney_layout.addLayout(chaos_layout)
         
         # 怪异度
-        mj_weird_layout = QVBoxLayout()
-        mj_weird_layout.addWidget(QLabel("怪异度:"))
-        self.mj_weird_edit = QLineEdit()
-        self.mj_weird_edit.setPlaceholderText("怪异度参数...")
-        mj_weird_layout.addWidget(self.mj_weird_edit)
-        mj_row4_layout.addLayout(mj_weird_layout)
+        weirdness_layout = QHBoxLayout()
+        weirdness_layout.addWidget(QLabel("怪异度:"))
+        self.weirdness_edit = QLineEdit()
+        self.weirdness_edit.setPlaceholderText("怪异度...")
+        self.weirdness_edit.setReadOnly(not self.is_editing)
+        weirdness_layout.addWidget(self.weirdness_edit)
+        midjourney_layout.addLayout(weirdness_layout)
         
-        mj_row4_layout.addStretch()
-        mj_layout.addLayout(mj_row4_layout)
+        ai_display_layout.addWidget(midjourney_group)
         
-        ai_display_layout.addWidget(mj_group)
-        
-        # 触发词区域
-        prompt_group = QGroupBox("触发词")
+        # Prompt信息区域
+        prompt_group = QGroupBox("提示词信息")
         prompt_layout = QVBoxLayout(prompt_group)
-        prompt_layout.setSpacing(5)
         
-        # 正面提示词
-        positive_prompt_layout = QHBoxLayout()
-        positive_prompt_layout.addWidget(QLabel("正面:"))
+        # 正向提示词
+        positive_layout = QVBoxLayout()
+        positive_layout.addWidget(QLabel("正向提示词:"))
         self.positive_prompt_edit = QTextEdit()
-        self.positive_prompt_edit.setMaximumHeight(60)
-        self.positive_prompt_edit.setPlaceholderText("输入正面提示词...")
-        positive_prompt_layout.addWidget(self.positive_prompt_edit)
-        prompt_layout.addLayout(positive_prompt_layout)
+        self.positive_prompt_edit.setMaximumHeight(100)
+        self.positive_prompt_edit.setPlaceholderText("正向提示词...")
+        self.positive_prompt_edit.setReadOnly(not self.is_editing)
+        positive_layout.addWidget(self.positive_prompt_edit)
+        prompt_layout.addLayout(positive_layout)
         
-        # 负面提示词
-        negative_prompt_layout = QHBoxLayout()
-        negative_prompt_layout.addWidget(QLabel("负面:"))
+        # 负向提示词
+        negative_layout = QVBoxLayout()
+        negative_layout.addWidget(QLabel("负向提示词:"))
         self.negative_prompt_edit = QTextEdit()
-        self.negative_prompt_edit.setMaximumHeight(60)
-        self.negative_prompt_edit.setPlaceholderText("输入负面提示词...")
-        negative_prompt_layout.addWidget(self.negative_prompt_edit)
-        prompt_layout.addLayout(negative_prompt_layout)
+        self.negative_prompt_edit.setMaximumHeight(100)
+        self.negative_prompt_edit.setPlaceholderText("负向提示词...")
+        self.negative_prompt_edit.setReadOnly(not self.is_editing)
+        negative_layout.addWidget(self.negative_prompt_edit)
+        prompt_layout.addLayout(negative_layout)
         
         ai_display_layout.addWidget(prompt_group)
         
-        # 其他AI参数区域
-        params_group = QGroupBox("其他参数")
-        params_layout = QVBoxLayout(params_group)
-        params_layout.setSpacing(5)
+        # Stable Diffusion参数区域
+        sd_group = QGroupBox("Stable Diffusion参数")
+        sd_layout = QVBoxLayout(sd_group)
         
-        # 第一行：采样器、步数、CFG
-        row1_layout = QHBoxLayout()
-        
-        # 采样器
-        sampler_layout = QVBoxLayout()
-        sampler_layout.addWidget(QLabel("采样器:"))
+        # 第一行：采样器和步数
+        sd_row1 = QHBoxLayout()
+        sd_row1.addWidget(QLabel("采样器:"))
         self.sampler_edit = QLineEdit()
-        self.sampler_edit.setPlaceholderText("输入采样器...")
-        sampler_layout.addWidget(self.sampler_edit)
-        row1_layout.addLayout(sampler_layout)
+        self.sampler_edit.setPlaceholderText("采样器...")
+        self.sampler_edit.setReadOnly(not self.is_editing)
+        sd_row1.addWidget(self.sampler_edit)
         
-        # 步数
-        steps_layout = QVBoxLayout()
-        steps_layout.addWidget(QLabel("步数:"))
+        sd_row1.addWidget(QLabel("步数:"))
         self.steps_edit = QLineEdit()
-        self.steps_edit.setPlaceholderText("输入步数...")
-        steps_layout.addWidget(self.steps_edit)
-        row1_layout.addLayout(steps_layout)
+        self.steps_edit.setPlaceholderText("步数...")
+        self.steps_edit.setReadOnly(not self.is_editing)
+        sd_row1.addWidget(self.steps_edit)
+        sd_layout.addLayout(sd_row1)
         
-        # CFG Scale
-        cfg_layout = QVBoxLayout()
-        cfg_layout.addWidget(QLabel("CFG:"))
+        # 第二行：CFG和种子
+        sd_row2 = QHBoxLayout()
+        sd_row2.addWidget(QLabel("CFG Scale:"))
         self.cfg_edit = QLineEdit()
-        self.cfg_edit.setPlaceholderText("输入CFG Scale...")
-        cfg_layout.addWidget(self.cfg_edit)
-        row1_layout.addLayout(cfg_layout)
+        self.cfg_edit.setPlaceholderText("CFG Scale...")
+        self.cfg_edit.setReadOnly(not self.is_editing)
+        sd_row2.addWidget(self.cfg_edit)
         
-        params_layout.addLayout(row1_layout)
-        
-        # 第二行：种子、尺寸、Clip Skip
-        row2_layout = QHBoxLayout()
-        
-        # 种子
-        seed_layout = QVBoxLayout()
-        seed_layout.addWidget(QLabel("种子:"))
+        sd_row2.addWidget(QLabel("种子:"))
         self.seed_edit = QLineEdit()
-        self.seed_edit.setPlaceholderText("输入种子值...")
-        seed_layout.addWidget(self.seed_edit)
-        row2_layout.addLayout(seed_layout)
+        self.seed_edit.setPlaceholderText("种子...")
+        self.seed_edit.setReadOnly(not self.is_editing)
+        sd_row2.addWidget(self.seed_edit)
+        sd_layout.addLayout(sd_row2)
         
-        # 尺寸
-        size_layout = QVBoxLayout()
-        size_layout.addWidget(QLabel("尺寸:"))
+        # 第三行：尺寸和软件
+        sd_row3 = QHBoxLayout()
+        sd_row3.addWidget(QLabel("尺寸:"))
         self.size_edit = QLineEdit()
-        self.size_edit.setPlaceholderText("输入图片尺寸...")
-        size_layout.addWidget(self.size_edit)
-        row2_layout.addLayout(size_layout)
+        self.size_edit.setPlaceholderText("尺寸...")
+        self.size_edit.setReadOnly(not self.is_editing)
+        sd_row3.addWidget(self.size_edit)
         
-        # Clip Skip
-        clip_skip_layout = QVBoxLayout()
-        clip_skip_layout.addWidget(QLabel("Clip Skip:"))
-        self.clip_skip_edit = QLineEdit()
-        self.clip_skip_edit.setPlaceholderText("输入Clip Skip...")
-        clip_skip_layout.addWidget(self.clip_skip_edit)
-        row2_layout.addLayout(clip_skip_layout)
-        
-        params_layout.addLayout(row2_layout)
-        
-        # 第三行：去噪强度、Lora权重、模型版本
-        row3_layout = QHBoxLayout()
-        
-        # 去噪强度
-        denoising_layout = QVBoxLayout()
-        denoising_layout.addWidget(QLabel("去噪强度:"))
-        self.denoising_edit = QLineEdit()
-        self.denoising_edit.setPlaceholderText("输入去噪强度...")
-        denoising_layout.addWidget(self.denoising_edit)
-        row3_layout.addLayout(denoising_layout)
-        
-        # Lora权重
-        lora_weight_layout = QVBoxLayout()
-        lora_weight_layout.addWidget(QLabel("Lora权重:"))
-        self.lora_weight_edit = QLineEdit()
-        self.lora_weight_edit.setPlaceholderText("输入Lora权重...")
-        lora_weight_layout.addWidget(self.lora_weight_edit)
-        row3_layout.addLayout(lora_weight_layout)
-        
-        # 模型版本
-        model_version_layout = QVBoxLayout()
-        model_version_layout.addWidget(QLabel("模型版本:"))
-        self.model_version_edit = QLineEdit()
-        self.model_version_edit.setPlaceholderText("输入模型版本...")
-        model_version_layout.addWidget(self.model_version_edit)
-        row3_layout.addLayout(model_version_layout)
-        
-        params_layout.addLayout(row3_layout)
-        
-        # 第四行：生成软件、生成日期
-        row4_layout = QHBoxLayout()
-        
-        # 生成软件
-        software_layout = QVBoxLayout()
-        software_layout.addWidget(QLabel("生成软件:"))
+        sd_row3.addWidget(QLabel("软件:"))
         self.software_edit = QLineEdit()
-        self.software_edit.setPlaceholderText("输入生成软件...")
-        software_layout.addWidget(self.software_edit)
-        row4_layout.addLayout(software_layout)
+        self.software_edit.setPlaceholderText("生成软件...")
+        self.software_edit.setReadOnly(not self.is_editing)
+        sd_row3.addWidget(self.software_edit)
+        sd_layout.addLayout(sd_row3)
         
-        # 生成日期
-        date_layout = QVBoxLayout()
-        date_layout.addWidget(QLabel("生成日期:"))
-        self.date_edit = QLineEdit()
-        self.date_edit.setPlaceholderText("输入生成日期...")
-        date_layout.addWidget(self.date_edit)
-        row4_layout.addLayout(date_layout)
-        
-        params_layout.addLayout(row4_layout)
-        
-        # 工作流信息区域
-        workflow_group = QGroupBox("工作流信息")
-        workflow_layout = QVBoxLayout(workflow_group)
-        workflow_layout.setSpacing(5)
-        
-        # 工作流摘要
-        workflow_summary_layout = QVBoxLayout()
-        workflow_summary_layout.addWidget(QLabel("工作流摘要:"))
-        self.workflow_summary_edit = QTextEdit()
-        self.workflow_summary_edit.setMaximumHeight(60)
-        self.workflow_summary_edit.setPlaceholderText("工作流摘要信息...")
-        workflow_summary_layout.addWidget(self.workflow_summary_edit)
-        workflow_layout.addLayout(workflow_summary_layout)
-        
-        # 工作流统计信息
-        workflow_stats_layout = QHBoxLayout()
-        
-        # 节点数量
-        node_count_layout = QVBoxLayout()
-        node_count_layout.addWidget(QLabel("节点数量:"))
-        self.node_count_edit = QLineEdit()
-        self.node_count_edit.setPlaceholderText("节点数量...")
-        node_count_layout.addWidget(self.node_count_edit)
-        workflow_stats_layout.addLayout(node_count_layout)
-        
-        # 连接数量
-        connection_count_layout = QVBoxLayout()
-        connection_count_layout.addWidget(QLabel("连接数量:"))
-        self.connection_count_edit = QLineEdit()
-        self.connection_count_edit.setPlaceholderText("连接数量...")
-        connection_count_layout.addWidget(self.connection_count_edit)
-        workflow_stats_layout.addLayout(connection_count_layout)
-        
-        # 工作流版本
-        workflow_version_layout = QVBoxLayout()
-        workflow_version_layout.addWidget(QLabel("工作流版本:"))
-        self.workflow_version_edit = QLineEdit()
-        self.workflow_version_edit.setPlaceholderText("工作流版本...")
-        workflow_version_layout.addWidget(self.workflow_version_edit)
-        workflow_stats_layout.addLayout(workflow_version_layout)
-        
-        workflow_layout.addLayout(workflow_stats_layout)
-        
-        ai_display_layout.addWidget(workflow_group)
-        
-        ai_display_layout.addWidget(params_group)
+        ai_display_layout.addWidget(sd_group)
         
         layout.addLayout(ai_display_layout)
         
@@ -534,26 +400,205 @@ class TagManager(QWidget):
     def show_ai_config(self):
         """显示AI配置对话框"""
         try:
-            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(self, "AI配置", "AI配置功能正在开发中...")
         except Exception as e:
-            self.logger.error("Failed to show AI config", error=str(e))
+            self.logger.error("Failed to show AI config: %s", str(e))
     
     def analyze_now(self):
         """立即分析当前图片"""
         try:
-            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(self, "AI分析", "AI分析功能正在开发中...")
         except Exception as e:
-            self.logger.error("Failed to analyze image", error=str(e))
+            self.logger.error("Failed to analyze image: %s", str(e))
+    
+    def update_ai_info_display(self, photo_data: dict):
+        """更新AI信息显示"""
+        self.current_photo = photo_data
+        
+        if not photo_data:
+            # 清空所有字段
+            self.model_name_edit.clear()
+            self.model_version_edit.clear()
+            self.lora_name_edit.clear()
+            self.lora_weight_edit.clear()
+            self.task_id_edit.clear()
+            self.version_edit.clear()
+            self.stylize_edit.clear()
+            self.quality_edit.clear()
+            self.aspect_ratio_edit.clear()
+            self.chaos_edit.clear()
+            self.weirdness_edit.clear()
+            return
+        
+        # 从照片数据中提取AI信息 - 使用ai_metadata而不是ai_info
+        ai_metadata = photo_data.get("ai_metadata", {})
+        is_ai_generated = photo_data.get("is_ai_generated", False)
+        
+        # 处理字符串格式的AI元数据
+        if isinstance(ai_metadata, str):
+            try:
+                import json
+                ai_metadata = json.loads(ai_metadata)
+                self.logger.info("AI metadata JSON parsed successfully: photo_id=%s", photo_data.get("id"))
+            except json.JSONDecodeError as e:
+                self.logger.error("Failed to parse AI metadata JSON: photo_id=%s", photo_data.get("id"), 
+                                error=str(e))
+                ai_metadata = {}
+        
+        self.logger.info("AI info display updated: photo_id=%s, is_ai_generated=%s, ai_metadata_type=%s, ai_metadata_keys=%s", 
+                        photo_data.get("id"), is_ai_generated, type(ai_metadata), 
+                        list(ai_metadata.keys()) if isinstance(ai_metadata, dict) else [])
+        
+        if not is_ai_generated or not ai_metadata:
+            # 清空所有字段
+            self.model_name_edit.clear()
+            self.model_version_edit.clear()
+            self.lora_name_edit.clear()
+            self.lora_weight_edit.clear()
+            self.task_id_edit.clear()
+            self.version_edit.clear()
+            self.stylize_edit.clear()
+            self.quality_edit.clear()
+            self.aspect_ratio_edit.clear()
+            self.chaos_edit.clear()
+            self.weirdness_edit.clear()
+            # 清空新添加的字段
+            self.positive_prompt_edit.clear()
+            self.negative_prompt_edit.clear()
+            self.sampler_edit.clear()
+            self.steps_edit.clear()
+            self.cfg_edit.clear()
+            self.seed_edit.clear()
+            self.size_edit.clear()
+            self.software_edit.clear()
+            return
+        
+        # 更新模型信息 - 使用正确的键名
+        self.model_name_edit.setText(ai_metadata.get("model_name", ""))
+        self.model_version_edit.setText(ai_metadata.get("model_version", ""))
+        
+        # 更新Lora信息
+        self.lora_name_edit.setText(ai_metadata.get("lora", ""))
+        lora_weight = ai_metadata.get("lora_weight", 0.0)
+        if lora_weight > 0:
+            self.lora_weight_edit.setText(str(lora_weight))
+        else:
+            self.lora_weight_edit.clear()
+        
+        # 更新Midjourney参数
+        self.task_id_edit.setText(ai_metadata.get("mj_job_id", ""))
+        self.version_edit.setText(ai_metadata.get("mj_version", ""))
+        stylize = ai_metadata.get("mj_stylize", 0)
+        if stylize > 0:
+            self.stylize_edit.setText(str(stylize))
+        else:
+            self.stylize_edit.clear()
+        
+        quality = ai_metadata.get("mj_quality", 0)
+        if quality > 0:
+            self.quality_edit.setText(str(quality))
+        else:
+            self.quality_edit.clear()
+            
+        self.aspect_ratio_edit.setText(ai_metadata.get("mj_aspect_ratio", ""))
+        
+        chaos = ai_metadata.get("mj_chaos", 0)
+        if chaos > 0:
+            self.chaos_edit.setText(str(chaos))
+        else:
+            self.chaos_edit.clear()
+            
+        weird = ai_metadata.get("mj_weird", 0)
+        if weird > 0:
+            self.weirdness_edit.setText(str(weird))
+        else:
+            self.weirdness_edit.clear()
+        
+        # 更新模式选择
+        raw_mode = ai_metadata.get("mj_raw_mode", False)
+        tile_mode = ai_metadata.get("mj_tile", False)
+        niji_mode = ai_metadata.get("mj_niji", False)
+        
+        self.raw_mode_radio.setChecked(raw_mode)
+        self.tile_mode_radio.setChecked(tile_mode)
+        self.niji_mode_radio.setChecked(niji_mode)
+        
+        # 更新Prompt信息
+        self.positive_prompt_edit.setPlainText(ai_metadata.get("positive_prompt", ""))
+        self.negative_prompt_edit.setPlainText(ai_metadata.get("negative_prompt", ""))
+        
+        # 更新Stable Diffusion参数
+        self.sampler_edit.setText(ai_metadata.get("sampler", ""))
+        
+        steps = ai_metadata.get("steps", 0)
+        if steps > 0:
+            self.steps_edit.setText(str(steps))
+        else:
+            self.steps_edit.clear()
+            
+        cfg_scale = ai_metadata.get("cfg_scale", 0.0)
+        if cfg_scale > 0:
+            self.cfg_edit.setText(str(cfg_scale))
+        else:
+            self.cfg_edit.clear()
+            
+        seed = ai_metadata.get("seed", 0)
+        if seed > 0:
+            self.seed_edit.setText(str(seed))
+        else:
+            self.seed_edit.clear()
+            
+        self.size_edit.setText(ai_metadata.get("size", ""))
+        self.software_edit.setText(ai_metadata.get("generation_software", ""))
+
+
+class PhotoTagsPanel(QWidget):
+    """照片标签信息面板"""
+    
+    def __init__(self, db_manager: DatabaseManager, album_manager=None):
+        super().__init__()
+        self.db_manager = db_manager
+        self.album_manager = album_manager
+        self.logger = logging.getLogger("picman.gui.photo_tags_panel")
+        
+        # 当前选中的照片
+        self.current_photo = None
+        
+        # 编辑状态标志
+        self.is_editing = False
+        
+        self.init_ui()
+        self.load_tags()
+    
+    def init_ui(self):
+        """Initialize the user interface."""
+        layout = QVBoxLayout(self)
+        
+        # 创建照片标签信息面板（带滚动条）
+        scroll = QScrollArea()
+        widget = self.create_photo_tags_panel()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # 设置滚动区域的最小高度，确保内容能够完整显示
+        scroll.setMinimumHeight(600)
+        
+        layout.addWidget(scroll)
     
     def create_photo_tags_panel(self) -> QWidget:
         """创建照片标签显示面板"""
         panel = QGroupBox("照片标签信息")
         layout = QVBoxLayout(panel)
         
+        # 设置合适的内容边距和间距
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(15)
+        
         # 翻译插件选项
         plugin_layout = QHBoxLayout()
+        plugin_layout.setSpacing(10)  # 设置按钮之间的间距
         
         # 全局翻译开关
         self.enable_global_translation = QCheckBox("启用全局翻译")
@@ -575,739 +620,387 @@ class TagManager(QWidget):
         # 添加立即翻译按钮
         self.translate_now_btn = QPushButton("立即翻译")
         self.translate_now_btn.clicked.connect(self.translate_now)
-        self.translate_now_btn.setToolTip("立即翻译当前标签")
+        self.translate_now_btn.setToolTip("立即翻译当前照片的标签")
         plugin_layout.addWidget(self.translate_now_btn)
+        
+        # 添加编辑模式切换按钮
+        self.edit_mode_btn = QPushButton("编辑模式")
+        self.edit_mode_btn.setCheckable(True)
+        self.edit_mode_btn.setToolTip("点击进入/退出编辑模式")
+        self.edit_mode_btn.clicked.connect(self.toggle_edit_mode)
+        plugin_layout.addWidget(self.edit_mode_btn)
+        
+        # 添加保存按钮
+        self.save_btn = QPushButton("保存标签")
+        self.save_btn.clicked.connect(self.save_tags)
+        self.save_btn.setToolTip("保存当前照片的标签")
+        self.save_btn.setEnabled(False)  # 初始状态禁用
+        plugin_layout.addWidget(self.save_btn)
         
         plugin_layout.addStretch()
         layout.addLayout(plugin_layout)
         
-        # 创建标签显示区域的主布局 - 改为垂直排列
-        tags_display_layout = QVBoxLayout()
-        tags_display_layout.setSpacing(10)
+        # 使用QSplitter来控制两个区域的比例
+        from PyQt6.QtWidgets import QSplitter
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # 1区 - 标签信息区域（占主要空间）
+        tags_info_widget = QWidget()
+        tags_info_layout = QVBoxLayout(tags_info_widget)
+        tags_info_layout.setSpacing(15)  # 从10增加到15，增加标签组之间的间距
+        tags_info_layout.setContentsMargins(5, 5, 5, 5)  # 设置内容边距
         
         # 简单标签区域
         simple_tags_group = QGroupBox("简单标签")
         simple_tags_layout = QVBoxLayout(simple_tags_group)
-        simple_tags_layout.setSpacing(5)
         
-        # 简单标签英文区域
-        simple_english_layout = QHBoxLayout()
-        simple_english_layout.addWidget(QLabel("英文:"))
-        self.simple_tags_english = QTextEdit()
-        self.simple_tags_english.setMaximumHeight(60)
-        self.simple_tags_english.setPlaceholderText("输入英文标签...")
-        self.simple_tags_english.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 3px;")
-        simple_english_layout.addWidget(self.simple_tags_english)
-        simple_tags_layout.addLayout(simple_english_layout)
+        # 英文简单标签
+        simple_en_layout = QVBoxLayout()
+        simple_en_layout.addWidget(QLabel("英文:"))
+        self.simple_en_edit = QTextEdit()
+        self.simple_en_edit.setPlaceholderText("输入英文标签...")
+        self.simple_en_edit.setReadOnly(True)  # 初始状态为只读
+        self.simple_en_edit.setMaximumHeight(100)  # 从80增加到100
+        self.simple_en_edit.setMinimumHeight(80)   # 从60增加到80
+        simple_en_layout.addWidget(self.simple_en_edit)
+        simple_tags_layout.addLayout(simple_en_layout)
         
-        # 简单标签中文区域
-        simple_chinese_layout = QHBoxLayout()
-        simple_chinese_layout.addWidget(QLabel("中文:"))
-        self.simple_tags_chinese = QTextEdit()
-        self.simple_tags_chinese.setMaximumHeight(60)
-        self.simple_tags_chinese.setPlaceholderText("输入中文标签...")
-        self.simple_tags_chinese.setStyleSheet("background-color: #e8f4f8; border: 1px solid #ccc; border-radius: 3px;")
-        simple_chinese_layout.addWidget(self.simple_tags_chinese)
-        simple_tags_layout.addLayout(simple_chinese_layout)
+        # 中文简单标签
+        simple_cn_layout = QVBoxLayout()
+        simple_cn_layout.addWidget(QLabel("中文:"))
+        self.simple_cn_edit = QTextEdit()
+        self.simple_cn_edit.setPlaceholderText("输入中文标签...")
+        self.simple_cn_edit.setReadOnly(True)  # 初始状态为只读
+        self.simple_cn_edit.setMaximumHeight(100)  # 从80增加到100
+        self.simple_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        simple_cn_layout.addWidget(self.simple_cn_edit)
+        simple_tags_layout.addLayout(simple_cn_layout)
         
-        tags_display_layout.addWidget(simple_tags_group)
+        tags_info_layout.addWidget(simple_tags_group)
         
         # 普通标签区域
-        normal_tags_group = QGroupBox("普通标签")
-        normal_tags_layout = QVBoxLayout(normal_tags_group)
-        normal_tags_layout.setSpacing(5)
+        general_tags_group = QGroupBox("普通标签")
+        general_tags_layout = QVBoxLayout(general_tags_group)
         
-        # 普通标签英文区域
-        normal_english_layout = QHBoxLayout()
-        normal_english_layout.addWidget(QLabel("英文:"))
-        self.normal_tags_english = QTextEdit()
-        self.normal_tags_english.setMaximumHeight(80)
-        self.normal_tags_english.setPlaceholderText("输入英文标签...")
-        self.normal_tags_english.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 3px;")
-        normal_english_layout.addWidget(self.normal_tags_english)
-        normal_tags_layout.addLayout(normal_english_layout)
+        # 英文普通标签
+        general_en_layout = QVBoxLayout()
+        general_en_layout.addWidget(QLabel("英文:"))
+        self.general_en_edit = QTextEdit()
+        self.general_en_edit.setPlaceholderText("输入英文标签...")
+        self.general_en_edit.setReadOnly(True)  # 初始状态为只读
+        self.general_en_edit.setMaximumHeight(100)  # 从80增加到100
+        self.general_en_edit.setMinimumHeight(80)   # 从60增加到80
+        general_en_layout.addWidget(self.general_en_edit)
+        general_tags_layout.addLayout(general_en_layout)
         
-        # 普通标签中文区域
-        normal_chinese_layout = QHBoxLayout()
-        normal_chinese_layout.addWidget(QLabel("中文:"))
-        self.normal_tags_chinese = QTextEdit()
-        self.normal_tags_chinese.setMaximumHeight(80)
-        self.normal_tags_chinese.setPlaceholderText("输入中文标签...")
-        self.normal_tags_chinese.setStyleSheet("background-color: #e8f4f8; border: 1px solid #ccc; border-radius: 3px;")
-        normal_chinese_layout.addWidget(self.normal_tags_chinese)
-        normal_tags_layout.addLayout(normal_chinese_layout)
+        # 中文普通标签
+        general_cn_layout = QVBoxLayout()
+        general_cn_layout.addWidget(QLabel("中文:"))
+        self.general_cn_edit = QTextEdit()
+        self.general_cn_edit.setPlaceholderText("输入中文标签...")
+        self.general_cn_edit.setReadOnly(True)  # 初始状态为只读
+        self.general_cn_edit.setMaximumHeight(100)  # 从80增加到100
+        self.general_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        general_cn_layout.addWidget(self.general_cn_edit)
+        general_tags_layout.addLayout(general_cn_layout)
         
-        tags_display_layout.addWidget(normal_tags_group)
+        tags_info_layout.addWidget(general_tags_group)
         
         # 详细标签区域
         detailed_tags_group = QGroupBox("详细标签")
         detailed_tags_layout = QVBoxLayout(detailed_tags_group)
-        detailed_tags_layout.setSpacing(5)
         
-        # 详细标签英文区域
-        detailed_english_layout = QHBoxLayout()
-        detailed_english_layout.addWidget(QLabel("英文:"))
-        self.detailed_tags_english = QTextEdit()
-        self.detailed_tags_english.setMaximumHeight(100)
-        self.detailed_tags_english.setPlaceholderText("输入英文标签...")
-        self.detailed_tags_english.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 3px;")
-        detailed_english_layout.addWidget(self.detailed_tags_english)
-        detailed_tags_layout.addLayout(detailed_english_layout)
+        # 英文详细标签
+        detailed_en_layout = QVBoxLayout()
+        detailed_en_layout.addWidget(QLabel("英文:"))
+        self.detailed_en_edit = QTextEdit()
+        self.detailed_en_edit.setPlaceholderText("输入英文标签...")
+        self.detailed_en_edit.setReadOnly(True)  # 初始状态为只读
+        self.detailed_en_edit.setMaximumHeight(100)  # 从80增加到100
+        self.detailed_en_edit.setMinimumHeight(80)   # 从60增加到80
+        detailed_en_layout.addWidget(self.detailed_en_edit)
+        detailed_tags_layout.addLayout(detailed_en_layout)
         
-        # 详细标签中文区域
-        detailed_chinese_layout = QHBoxLayout()
-        detailed_chinese_layout.addWidget(QLabel("中文:"))
-        self.detailed_tags_chinese = QTextEdit()
-        self.detailed_tags_chinese.setMaximumHeight(100)
-        self.detailed_tags_chinese.setPlaceholderText("输入中文标签...")
-        self.detailed_tags_chinese.setStyleSheet("background-color: #e8f4f8; border: 1px solid #ccc; border-radius: 3px;")
-        detailed_chinese_layout.addWidget(self.detailed_tags_chinese)
-        detailed_tags_layout.addLayout(detailed_chinese_layout)
+        # 中文详细标签
+        detailed_cn_edit_layout = QVBoxLayout()
+        detailed_cn_edit_layout.addWidget(QLabel("中文:"))
+        self.detailed_cn_edit = QTextEdit()
+        self.detailed_cn_edit.setPlaceholderText("输入中文标签...")
+        self.detailed_cn_edit.setReadOnly(True)  # 初始状态为只读
+        self.detailed_cn_edit.setMaximumHeight(100)  # 从80增加到100
+        self.detailed_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        detailed_cn_edit_layout.addWidget(self.detailed_cn_edit)
+        detailed_tags_layout.addLayout(detailed_cn_edit_layout)
         
-        tags_display_layout.addWidget(detailed_tags_group)
+        tags_info_layout.addWidget(detailed_tags_group)
         
-        layout.addLayout(tags_display_layout)
+        # 2区 - 标签备注区域（占较小空间）
+        notes_widget = QWidget()
+        notes_layout = QVBoxLayout(notes_widget)
+        notes_layout.setContentsMargins(5, 5, 5, 5)  # 设置内容边距
+        notes_layout.setSpacing(10)  # 设置间距
         
-        # 标签备注
-        notes_layout = QVBoxLayout()
-        notes_layout.addWidget(QLabel("标签备注:"))
+        notes_group = QGroupBox("标签备注")
+        notes_group_layout = QVBoxLayout(notes_group)
+        notes_group_layout.setContentsMargins(8, 8, 8, 8)  # 设置组内边距
         
-        self.tags_notes = QTextEdit()
-        self.tags_notes.setMaximumHeight(80)
-        self.tags_notes.setPlaceholderText("添加标签备注...")
-        notes_layout.addWidget(self.tags_notes)
+        self.notes_edit = QTextEdit()
+        self.notes_edit.setPlaceholderText("添加标签备注...")
+        self.notes_edit.setReadOnly(True)  # 初始状态为只读
+        self.notes_edit.setMaximumHeight(120)  # 从100增加到120
+        self.notes_edit.setMinimumHeight(100)   # 从80增加到100
+        notes_group_layout.addWidget(self.notes_edit)
         
-        layout.addLayout(notes_layout)
+        notes_layout.addWidget(notes_group)
         
-        # 添加保存按钮
-        save_layout = QHBoxLayout()
-        save_layout.addStretch()
+        # 添加到分割器并设置比例
+        splitter.addWidget(tags_info_widget)
+        splitter.addWidget(notes_widget)
         
-        self.save_tags_btn = QPushButton("保存标签")
-        self.save_tags_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                background-color: #3d8b40;
-            }
-        """)
-        self.save_tags_btn.clicked.connect(self.save_tags_to_database)
-        self.save_tags_btn.setToolTip("保存当前标签和备注到数据库")
-        save_layout.addWidget(self.save_tags_btn)
+        # 设置分割器比例：标签信息占70%，备注占30%，确保有足够空间显示所有内容
+        splitter.setSizes([700, 300])
         
-        layout.addLayout(save_layout)
+        # 设置分割器的最小高度，确保内容不被压缩
+        splitter.setMinimumHeight(500)
+        
+        layout.addWidget(splitter)
         
         return panel
-    
-
     
     def load_tags(self):
         """Load tags from database."""
         try:
-            # In a real implementation, this would query the database
-            # For now, we'll create some sample tags
-            sample_tags = [
-                {"id": 1, "name": "Family", "color": "#e74c3c", "usage_count": 56},
-                {"id": 2, "name": "Vacation", "color": "#3498db", "usage_count": 24},
-                {"id": 3, "name": "Nature", "color": "#2ecc71", "usage_count": 18},
-                {"id": 4, "name": "Food", "color": "#f39c12", "usage_count": 12},
-                {"id": 5, "name": "Architecture", "color": "#9b59b6", "usage_count": 8}
-            ]
-            
-            # 由于我们已经将tag_list替换为AI信息面板，这里不再需要加载标签列表
-            # 但保留日志记录
-            self.logger.info("Tags loaded", count=len(sample_tags))
-            
+            tags = self.db_manager.get_all_tags()
+            self.logger.info("Tags loaded: count=%d", len(tags))
         except Exception as e:
-            self.logger.error("Failed to load tags", error=str(e))
-    
-    def create_tag(self):
-        """Create a new tag."""
-        dialog = TagDialog(self)
-        if dialog.exec():
-            tag_data = dialog.get_tag_data()
-            
-            # In a real implementation, this would add to the database
-            # For now, we'll just add to the list
-            tag_data["id"] = len(self.tag_list.findItems("", Qt.MatchFlag.MatchContains)) + 1
-            tag_data["usage_count"] = 0
-            
-            item = TagListItem(tag_data)
-            self.tag_list.addItem(item)
-            
-            self.logger.info("Tag created", name=tag_data["name"])
-            self.tags_updated.emit()
-    
-    def edit_tag(self, tag_id: int):
-        """Edit an existing tag."""
-        # Find the tag item
-        for i in range(self.tag_list.count()):
-            item = self.tag_list.item(i)
-            if hasattr(item, 'tag_id') and item.tag_id == tag_id:
-                dialog = TagDialog(self, item.tag_data)
-                if dialog.exec():
-                    tag_data = dialog.get_tag_data()
-                    item.tag_data.update(tag_data)
-                    item.setText(tag_data["name"])
-                    
-                    self.logger.info("Tag edited", tag_id=tag_id, name=tag_data["name"])
-                    self.tags_updated.emit()
-                break
-    
-    def delete_tag(self, tag_id: int):
-        """Delete a tag."""
-        # Find the tag item
-        for i in range(self.tag_list.count()):
-            item = self.tag_list.item(i)
-            if hasattr(item, 'tag_id') and item.tag_id == tag_id:
-                reply = QMessageBox.question(
-                    self, "Delete Tag",
-                    f"Are you sure you want to delete the tag '{item.text()}'?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                
-                if reply == QMessageBox.StandardButton.Yes:
-                    self.tag_list.takeItem(i)
-                    self.logger.info("Tag deleted", tag_id=tag_id, name=item.text())
-                    self.tags_updated.emit()
-                break
-    
-    def on_tag_selected(self, item):
-        """Handle tag selection."""
-        if hasattr(item, 'tag_id'):
-            self.tag_selected.emit(item.tag_id)
-    
-    def show_tag_context_menu(self, position):
-        """Show context menu for tags."""
-        item = self.tag_list.itemAt(position)
-        if not item:
-            return
-        
-        menu = QMenu(self)
-        
-        edit_action = QAction("Edit", self)
-        edit_action.triggered.connect(lambda: self.edit_tag(item.tag_id))
-        menu.addAction(edit_action)
-        
-        delete_action = QAction("Delete", self)
-        delete_action.triggered.connect(lambda: self.delete_tag(item.tag_id))
-        menu.addAction(delete_action)
-        
-        menu.exec(self.tag_list.mapToGlobal(position))
-    
-    def highlight_photo_tags(self, photo_tags: List[str]):
-        """Highlight tags that are used by the current photo."""
-        try:
-            # 由于我们已经将tag_list替换为AI信息面板，这里不再需要高亮标签
-            # 但保留日志记录
-            self.logger.info("Tags highlighted for photo", highlighted_count=0, photo_tags=photo_tags)
-            
-        except Exception as e:
-            self.logger.error("Failed to highlight photo tags", error=str(e))
+            self.logger.error("Failed to load tags: %s", str(e))
     
     def update_photo_tags_display(self, photo_data: dict):
         """更新照片标签显示"""
         try:
             # 如果正在编辑，不要覆盖用户输入的内容
             if self.is_editing:
-                self.logger.info("Skipping display update while editing", photo_id=photo_data.get('id'))
+                self.logger.info("Skipping display update while editing: photo_id=%s", photo_data.get('id'))
                 return
-                
+            
             self.current_photo = photo_data
             
-            # 获取标签数据
-            simple_tags = photo_data.get('simple_tags', [])
-            normal_tags = photo_data.get('normal_tags', [])
-            detailed_tags = photo_data.get('detailed_tags', [])
-            tag_translations = photo_data.get('tag_translations', {})
-            
-            # 解析标签数据（可能是JSON字符串或列表/字典）
-            import json
-            if isinstance(simple_tags, str):
-                try:
-                    simple_tags = json.loads(simple_tags) if simple_tags else []
-                except json.JSONDecodeError:
-                    simple_tags = []
-            
-            if isinstance(normal_tags, str):
-                try:
-                    normal_tags = json.loads(normal_tags) if normal_tags else []
-                except json.JSONDecodeError:
-                    normal_tags = []
-            
-            if isinstance(detailed_tags, str):
-                try:
-                    detailed_tags = json.loads(detailed_tags) if detailed_tags else []
-                except json.JSONDecodeError:
-                    detailed_tags = []
-            
-            if isinstance(tag_translations, str):
-                try:
-                    tag_translations = json.loads(tag_translations) if tag_translations else {}
-                except json.JSONDecodeError:
-                    tag_translations = {}
-            
-            # 分离中英文标签的函数
-            def separate_tags_by_language(tags_list):
-                chinese_tags = []
-                english_tags = []
-                
-                for tag in tags_list:
-                    if self._is_chinese_text(tag):
-                        chinese_tags.append(tag)
-                    else:
-                        english_tags.append(tag)
-                
-                return english_tags, chinese_tags
-            
-            # 更新简单标签
-            if simple_tags:
-                english_tags, chinese_tags = separate_tags_by_language(simple_tags)
-                english_text = ', '.join(english_tags)
-                chinese_text = ', '.join(chinese_tags)  # 直接显示中文标签
-                self.simple_tags_english.setPlainText(english_text)
-                self.simple_tags_chinese.setPlainText(chinese_text)
-            else:
-                self.simple_tags_english.setPlainText("")
-                self.simple_tags_chinese.setPlainText("")
-            
-            # 更新普通标签
-            if normal_tags:
-                english_tags, chinese_tags = separate_tags_by_language(normal_tags)
-                english_text = ', '.join(english_tags)
-                chinese_text = ', '.join(chinese_tags)  # 直接显示中文标签
-                self.normal_tags_english.setPlainText(english_text)
-                self.normal_tags_chinese.setPlainText(chinese_text)
-            else:
-                self.normal_tags_english.setPlainText("")
-                self.normal_tags_chinese.setPlainText("")
-            
-            # 更新详细标签
-            if detailed_tags:
-                english_tags, chinese_tags = separate_tags_by_language(detailed_tags)
-                english_text = ', '.join(english_tags)
-                chinese_text = ', '.join(chinese_tags)  # 直接显示中文标签
-                self.detailed_tags_english.setPlainText(english_text)
-                self.detailed_tags_chinese.setPlainText(chinese_text)
-            else:
-                self.detailed_tags_english.setPlainText("")
-                self.detailed_tags_chinese.setPlainText("")
-            
-            # 更新标签备注
-            notes = photo_data.get('notes', '')  # 使用数据库中的 'notes' 字段
-            if self.tags_notes.toPlainText() != notes:
-                self.tags_notes.setPlainText(notes)
-            
-            # 高亮显示照片使用的标签
-            all_tags = simple_tags + normal_tags + detailed_tags
-            self.highlight_photo_tags(all_tags)
-            
-            # 更新AI信息显示
-            self._update_ai_info_display(photo_data)
-            
-            self.logger.info("Photo tags display updated", photo_id=photo_data.get('id'))
-            
-        except Exception as e:
-            self.logger.error("Failed to update photo tags display", error=str(e))
-    
-    def _update_ai_info_display(self, photo_data: dict):
-        """更新AI信息显示"""
-        try:
-            # 获取AI元数据
-            ai_metadata = photo_data.get('ai_metadata', {})
-            is_ai_generated = photo_data.get('is_ai_generated', False)
-            
-            if not is_ai_generated or not ai_metadata:
-                # 清空所有AI信息字段
-                self.model_name_edit.setText("")
-                self.sampler_edit.setText("")
-                self.steps_edit.setText("")
-                self.cfg_edit.setText("")
-                self.seed_edit.setText("")
-                self.size_edit.setText("")
-                self.clip_skip_edit.setText("")
-                self.denoising_edit.setText("")
-                self.lora_weight_edit.setText("")
-                self.model_version_edit.setText("")
-                self.software_edit.setText("")
-                self.date_edit.setText("")
-                self.workflow_summary_edit.setPlainText("")
-                self.node_count_edit.setText("")
-                self.connection_count_edit.setText("")
-                self.workflow_version_edit.setText("")
-                self.positive_prompt_edit.setPlainText("")
-                self.negative_prompt_edit.setPlainText("")
-                
-                # 清空Midjourney特有参数
-                self.mj_job_id_edit.setText("")
-                self.mj_version_edit.setText("")
-                self.mj_stylize_edit.setText("")
-                self.mj_quality_edit.setText("")
-                self.mj_ar_edit.setText("")
-                self.mj_raw_mode_checkbox.setChecked(False)
-                self.mj_tile_checkbox.setChecked(False)
-                self.mj_niji_checkbox.setChecked(False)
-                self.mj_chaos_edit.setText("")
-                self.mj_weird_edit.setText("")
+            if not photo_data:
+                # 清空所有标签字段
+                self.simple_en_edit.clear()
+                self.simple_cn_edit.clear()
+                self.general_en_edit.clear()
+                self.general_cn_edit.clear()
+                self.detailed_en_edit.clear()
+                self.detailed_cn_edit.clear()
+                self.notes_edit.clear()
                 return
             
-            # 更新模型信息
-            model_name = ai_metadata.get('model_name', '')
-            if model_name:
-                self.model_name_edit.setText(model_name)
-            else:
-                self.model_name_edit.setText("")
-            
-            # 更新生成参数
-            sampler = ai_metadata.get('sampler', '')
-            if sampler:
-                self.sampler_edit.setText(sampler)
-            else:
-                self.sampler_edit.setText("")
-            
-            steps = ai_metadata.get('steps', 0)
-            if steps > 0:
-                self.steps_edit.setText(str(steps))
-            else:
-                self.steps_edit.setText("")
-            
-            cfg_scale = ai_metadata.get('cfg_scale', 0.0)
-            if cfg_scale > 0:
-                self.cfg_edit.setText(str(cfg_scale))
-            else:
-                self.cfg_edit.setText("")
-            
-            # 更新其他参数
-            seed = ai_metadata.get('seed', 0)
-            if seed > 0:
-                self.seed_edit.setText(str(seed))
-            else:
-                self.seed_edit.setText("")
-            
-            size = ai_metadata.get('size', '')
-            if size:
-                self.size_edit.setText(size)
-            else:
-                self.size_edit.setText("")
-            
-            clip_skip = ai_metadata.get('clip_skip', 0)
-            if clip_skip > 0:
-                self.clip_skip_edit.setText(str(clip_skip))
-            else:
-                self.clip_skip_edit.setText("")
-            
-            denoising_strength = ai_metadata.get('denoising_strength', 0.0)
-            if denoising_strength > 0:
-                self.denoising_edit.setText(str(denoising_strength))
-            else:
-                self.denoising_edit.setText("")
-            
-            lora_weight = ai_metadata.get('lora_weight', 0.0)
-            if lora_weight > 0:
-                self.lora_weight_edit.setText(str(lora_weight))
-            else:
-                self.lora_weight_edit.setText("")
-            
-            model_version = ai_metadata.get('model_version', '')
-            if model_version:
-                self.model_version_edit.setText(model_version)
-            else:
-                self.model_version_edit.setText("")
-            
-            generation_software = ai_metadata.get('generation_software', '')
-            if generation_software:
-                self.software_edit.setText(generation_software)
-            else:
-                self.software_edit.setText("")
-            
-            generation_date = ai_metadata.get('generation_date', '')
-            if generation_date:
-                self.date_edit.setText(generation_date)
-            else:
-                self.date_edit.setText("")
-            
-            # 更新工作流信息
-            raw_metadata = ai_metadata.get('raw_metadata', {})
-            if isinstance(raw_metadata, dict):
-                # 工作流摘要
-                workflow_summary = raw_metadata.get('workflow_summary', '')
-                if workflow_summary:
-                    self.workflow_summary_edit.setPlainText(workflow_summary)
-                else:
-                    self.workflow_summary_edit.setPlainText("")
+            # 更新简单标签
+            try:
+                simple_en = photo_data.get('simple_tags_en', '')
+                simple_cn = photo_data.get('simple_tags_cn', '')
                 
-                # 工作流统计信息
-                workflow_info = raw_metadata.get('workflow_info', {})
-                if isinstance(workflow_info, dict):
-                    node_count = workflow_info.get('node_count', 0)
-                    if node_count > 0:
-                        self.node_count_edit.setText(str(node_count))
-                    else:
-                        self.node_count_edit.setText("")
+                # 如果有正向提示词且没有简单标签，使用正向提示词
+                positive_prompt = photo_data.get('positive_prompt', '')
+                if positive_prompt and not simple_en:
+                    prompt_tags = [tag.strip() for tag in positive_prompt.split(',') if tag.strip()]
+                    # 分离中英文标签
+                    english_tags = []
+                    chinese_tags = []
                     
-                    connection_count = workflow_info.get('connection_count', 0)
-                    if connection_count > 0:
-                        self.connection_count_edit.setText(str(connection_count))
-                    else:
-                        self.connection_count_edit.setText("")
+                    for tag in prompt_tags:
+                        if self._is_chinese_text(tag):
+                            chinese_tags.append(tag)
+                        else:
+                            english_tags.append(tag)
                     
-                    workflow_version = workflow_info.get('workflow_version', '')
-                    if workflow_version:
-                        self.workflow_version_edit.setText(workflow_version)
-                    else:
-                        self.workflow_version_edit.setText("")
+                    self.simple_en_edit.setPlainText(', '.join(english_tags))
+                    self.simple_cn_edit.setPlainText(', '.join(chinese_tags))
+                    self.logger.info("Simple tags loaded from prompt: en=%s, cn=%s", english_tags, chinese_tags)
                 else:
-                    self.node_count_edit.setText("")
-                    self.connection_count_edit.setText("")
-                    self.workflow_version_edit.setText("")
-            else:
-                self.workflow_summary_edit.setPlainText("")
-                self.node_count_edit.setText("")
-                self.connection_count_edit.setText("")
-                self.workflow_version_edit.setText("")
+                    # 使用数据库中的标签
+                    self.simple_en_edit.setPlainText(simple_en)
+                    self.simple_cn_edit.setPlainText(simple_cn)
+                    self.logger.info("Simple tags loaded: en=%s, cn=%s", simple_en, simple_cn)
+            except Exception as e:
+                self.simple_en_edit.clear()
+                self.simple_cn_edit.clear()
+                self.logger.error("Failed to load simple tags: %s", str(e))
             
-            # 更新提示词
-            positive_prompt = ai_metadata.get('positive_prompt', '')
-            if positive_prompt:
-                self.positive_prompt_edit.setPlainText(positive_prompt)
-            else:
-                self.positive_prompt_edit.setPlainText("")
+            # 更新普通标签
+            try:
+                general_en = photo_data.get('general_tags_en', '')
+                general_cn = photo_data.get('general_tags_cn', '')
+                
+                self.general_en_edit.setPlainText(general_en)
+                self.general_cn_edit.setPlainText(general_cn)
+                
+                self.logger.info("General tags loaded: en=%s, cn=%s", general_en, general_cn)
+            except Exception as e:
+                self.general_en_edit.clear()
+                self.general_cn_edit.clear()
+                self.logger.error("Failed to load normal tags: %s", str(e))
             
-            negative_prompt = ai_metadata.get('negative_prompt', '')
-            if negative_prompt:
-                self.negative_prompt_edit.setPlainText(negative_prompt)
-            else:
-                self.negative_prompt_edit.setPlainText("")
+            # 更新详细标签
+            try:
+                detailed_en = photo_data.get('detailed_tags_en', '')
+                detailed_cn = photo_data.get('detailed_tags_cn', '')
+                
+                self.detailed_en_edit.setPlainText(detailed_en)
+                self.detailed_cn_edit.setPlainText(detailed_cn)
+                
+                self.logger.info("Detailed tags loaded: en=%s, cn=%s", detailed_en, detailed_cn)
+            except Exception as e:
+                self.detailed_en_edit.clear()
+                self.detailed_cn_edit.clear()
+                self.logger.error("Failed to load detailed tags: %s", str(e))
             
-            # 更新Midjourney特有参数
-            mj_job_id = ai_metadata.get('mj_job_id', '')
-            if mj_job_id:
-                self.mj_job_id_edit.setText(mj_job_id)
-            else:
-                self.mj_job_id_edit.setText("")
-            
-            mj_version = ai_metadata.get('mj_version', '')
-            if mj_version:
-                self.mj_version_edit.setText(mj_version)
-            else:
-                self.mj_version_edit.setText("")
-            
-            mj_stylize = ai_metadata.get('mj_stylize', 0)
-            if mj_stylize > 0:
-                self.mj_stylize_edit.setText(str(mj_stylize))
-            else:
-                self.mj_stylize_edit.setText("")
-            
-            mj_quality = ai_metadata.get('mj_quality', 0)
-            if mj_quality > 0:
-                self.mj_quality_edit.setText(str(mj_quality))
-            else:
-                self.mj_quality_edit.setText("")
-            
-            mj_aspect_ratio = ai_metadata.get('mj_aspect_ratio', '')
-            if mj_aspect_ratio:
-                self.mj_ar_edit.setText(mj_aspect_ratio)
-            else:
-                self.mj_ar_edit.setText("")
-            
-            mj_raw_mode = ai_metadata.get('mj_raw_mode', False)
-            self.mj_raw_mode_checkbox.setChecked(mj_raw_mode)
-            
-            mj_tile = ai_metadata.get('mj_tile', False)
-            self.mj_tile_checkbox.setChecked(mj_tile)
-            
-            mj_niji = ai_metadata.get('mj_niji', False)
-            self.mj_niji_checkbox.setChecked(mj_niji)
-            
-            mj_chaos = ai_metadata.get('mj_chaos', 0)
-            if mj_chaos > 0:
-                self.mj_chaos_edit.setText(str(mj_chaos))
-            else:
-                self.mj_chaos_edit.setText("")
-            
-            mj_weird = ai_metadata.get('mj_weird', 0)
-            if mj_weird > 0:
-                self.mj_weird_edit.setText(str(mj_weird))
-            else:
-                self.mj_weird_edit.setText("")
-            
-            self.logger.info("AI info display updated", 
-                           is_ai_generated=is_ai_generated,
-                           software=generation_software,
-                           model=model_name)
-            
+            # 更新备注
+            notes = photo_data.get('notes', '')
+            self.notes_edit.setText(notes)
+            self.logger.info("Notes loaded: notes=%s", notes)
+                
         except Exception as e:
-            self.logger.error("Failed to update AI info display", error=str(e))
+            self.logger.error("Failed to update photo tags display: %s", str(e))
     
     def _is_chinese_text(self, text: str) -> bool:
-        """检查文本是否为中文"""
+        """检查文本是否包含中文字符"""
         if not text:
             return False
         
         # 检查是否包含中文字符
-        import re
-        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
-        return bool(chinese_pattern.search(text))
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+        return False
     
-    def _is_english_text(self, text: str) -> bool:
-        """检查文本是否为英文"""
-        if not text:
-            return False
-        
-        # 简单的英文检测：检查是否包含英文字母
-        import re
-        english_pattern = re.compile(r'[a-zA-Z]')
-        return bool(english_pattern.search(text))
+    def show_plugin_config(self):
+        """显示插件配置对话框"""
+        try:
+            # 创建配置对话框
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QGroupBox
+            
+            config_dialog = QDialog(self)
+            config_dialog.setWindowTitle("Google翻译插件配置")
+            config_dialog.setMinimumWidth(400)
+            
+            layout = QVBoxLayout(config_dialog)
+            
+            # 源语言配置
+            source_group = QGroupBox("源语言")
+            source_layout = QVBoxLayout(source_group)
+            source_layout.addWidget(QLabel("选择要翻译的源语言:"))
+            
+            self.source_lang_combo = QComboBox()
+            self.source_lang_combo.addItems([
+                "英语 (en)",
+                "中文简体 (zh-CN)", 
+                "中文繁体 (zh-TW)",
+                "日语 (ja)",
+                "韩语 (ko)",
+                "法语 (fr)",
+                "德语 (de)",
+                "西班牙语 (es)",
+                "俄语 (ru)",
+                "自动检测 (auto)"
+            ])
+            source_layout.addWidget(self.source_lang_combo)
+            layout.addWidget(source_group)
+            
+            # 目标语言配置
+            target_group = QGroupBox("目标语言")
+            target_layout = QVBoxLayout(target_group)
+            target_layout.addWidget(QLabel("选择要翻译成的目标语言:"))
+            
+            self.target_lang_combo = QComboBox()
+            self.target_lang_combo.addItems([
+                "英语 (en)",
+                "中文简体 (zh-CN)",
+                "中文繁体 (zh-TW)", 
+                "日语 (ja)",
+                "韩语 (ko)",
+                "法语 (fr)",
+                "德语 (de)",
+                "西班牙语 (es)",
+                "俄语 (ru)"
+            ])
+            target_layout.addWidget(self.target_lang_combo)
+            layout.addWidget(target_group)
+            
+            # 按钮
+            button_layout = QHBoxLayout()
+            cancel_btn = QPushButton("取消")
+            cancel_btn.clicked.connect(config_dialog.reject)
+            button_layout.addWidget(cancel_btn)
+            
+            save_btn = QPushButton("保存")
+            save_btn.clicked.connect(lambda: self._save_plugin_config(config_dialog))
+            save_btn.setDefault(True)
+            button_layout.addWidget(save_btn)
+            
+            layout.addLayout(button_layout)
+            
+            # 显示对话框
+            config_dialog.exec()
+            
+        except Exception as e:
+            self.logger.error("Failed to show plugin config: %s", str(e))
+            QMessageBox.critical(self, "错误", f"显示插件配置失败: {str(e)}")
     
-    def _get_builtin_translations(self) -> Dict[str, str]:
-        """获取内置翻译词典"""
-        return {
-            # 常见摄影标签
-            "portrait": "人像",
-            "landscape": "风景",
-            "nature": "自然",
-            "architecture": "建筑",
-            "street": "街拍",
-            "macro": "微距",
-            "black and white": "黑白",
-            "color": "彩色",
-            "sunset": "日落",
-            "sunrise": "日出",
-            "night": "夜景",
-            "city": "城市",
-            "countryside": "乡村",
-            "mountain": "山",
-            "sea": "海",
-            "ocean": "海洋",
-            "forest": "森林",
-            "flower": "花",
-            "tree": "树",
-            "sky": "天空",
-            "cloud": "云",
-            "rain": "雨",
-            "snow": "雪",
-            "winter": "冬天",
-            "summer": "夏天",
-            "spring": "春天",
-            "autumn": "秋天",
-            "fall": "秋天",
+    def _save_plugin_config(self, dialog):
+        """保存插件配置"""
+        try:
+            # 获取选择的语言
+            source_lang = self.source_lang_combo.currentText().split("(")[1].rstrip(")")
+            target_lang = self.target_lang_combo.currentText().split("(")[1].rstrip(")")
             
-            # 人物相关
-            "man": "男人",
-            "woman": "女人",
-            "child": "孩子",
-            "family": "家庭",
-            "people": "人们",
-            "crowd": "人群",
-            "face": "脸",
-            "smile": "微笑",
-            "laugh": "笑",
-            "happy": "快乐",
-            "sad": "悲伤",
+            # 保存到配置文件
+            import json
+            from pathlib import Path
             
-            # 动作相关
-            "walking": "走路",
-            "running": "跑步",
-            "dancing": "跳舞",
-            "singing": "唱歌",
-            "playing": "玩耍",
-            "working": "工作",
-            "reading": "阅读",
-            "writing": "写作",
-            "cooking": "烹饪",
-            "eating": "吃饭",
-            "drinking": "喝水",
+            config_path = Path(__file__).parent.parent.parent.parent / "config" / "plugins" / "google_translate_plugin.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # 物体相关
-            "car": "汽车",
-            "bike": "自行车",
-            "bus": "公交车",
-            "train": "火车",
-            "plane": "飞机",
-            "boat": "船",
-            "house": "房子",
-            "building": "建筑",
-            "bridge": "桥",
-            "road": "路",
-            "street": "街道",
-            "park": "公园",
-            "garden": "花园",
-            "school": "学校",
-            "hospital": "医院",
-            "shop": "商店",
-            "market": "市场",
-            "restaurant": "餐厅",
-            "cafe": "咖啡厅",
-            "hotel": "酒店",
+            config_data = {
+                "config": {
+                    "source_language": source_lang,
+                    "target_language": target_lang,
+                    "max_retries": 3,
+                    "base_delay": 0.5,
+                    "max_delay": 2.0,
+                    "request_interval": 1.0
+                }
+            }
             
-            # 动物相关
-            "dog": "狗",
-            "cat": "猫",
-            "bird": "鸟",
-            "fish": "鱼",
-            "horse": "马",
-            "cow": "牛",
-            "sheep": "羊",
-            "pig": "猪",
-            "chicken": "鸡",
-            "duck": "鸭子",
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
             
-            # 颜色相关
-            "red": "红色",
-            "blue": "蓝色",
-            "green": "绿色",
-            "yellow": "黄色",
-            "orange": "橙色",
-            "purple": "紫色",
-            "pink": "粉色",
-            "brown": "棕色",
-            "black": "黑色",
-            "white": "白色",
-            "gray": "灰色",
-            "grey": "灰色",
+            self.logger.info("Plugin config saved: source_lang=%s, target_lang=%s", source_lang, target_lang)
             
-            # 其他常见词汇
-            "beautiful": "美丽",
-            "amazing": "令人惊叹",
-            "wonderful": "精彩",
-            "great": "很棒",
-            "good": "好",
-            "bad": "坏",
-            "big": "大",
-            "small": "小",
-            "old": "老",
-            "new": "新",
-            "young": "年轻",
-            "tall": "高",
-            "short": "矮",
-            "long": "长",
-            "wide": "宽",
-            "narrow": "窄",
-            "fast": "快",
-            "slow": "慢",
-            "hot": "热",
-            "cold": "冷",
-            "warm": "温暖",
-            "cool": "凉爽",
-        }
+            # 关闭对话框
+            dialog.accept()
+            
+            # 显示成功消息
+            QMessageBox.information(self, "配置保存", f"配置已保存\n源语言: {source_lang}\n目标语言: {target_lang}")
+            
+        except Exception as e:
+            self.logger.error("Failed to save plugin config: %s", str(e))
+            QMessageBox.critical(self, "错误", f"保存配置失败: {str(e)}")
     
     def translate_now(self):
         """立即翻译功能"""
         try:
             print("翻译按钮被点击了！")  # 调试信息
             
+            # 检查是否启用了Google翻译插件
+            if not self.use_translation_plugin.isChecked():
+                QMessageBox.warning(self, "提示", "请先勾选'使用Google翻译插件'")
+                return
+            
             # 检查是否启用了全局翻译
             is_global_translation = self.enable_global_translation.isChecked()
-            print(f"全局翻译状态: {is_global_translation}")  # 调试信息
+
             
             if is_global_translation:
                 # 全局翻译：翻译当前相册内所有图片的所有标签
@@ -1319,9 +1012,8 @@ class TagManager(QWidget):
                 self._translate_current_photo_tags()
                 
         except Exception as e:
-            print(f"翻译出错: {e}")  # 调试信息
-            self.logger.error("Failed to translate now", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
+
+            self.logger.error("Failed to translate now: %s", str(e))
             QMessageBox.critical(self, "错误", f"翻译失败：{str(e)}")
     
     def _translate_current_photo_tags(self):
@@ -1331,7 +1023,6 @@ class TagManager(QWidget):
             
             if not self.current_photo:
                 print("没有选中照片")  # 调试信息
-                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.information(self, "提示", "请先选择一张照片")
                 return
             
@@ -1344,49 +1035,129 @@ class TagManager(QWidget):
             source_lang = getattr(plugin, 'source_language', 'en')
             target_lang = getattr(plugin, 'target_language', 'zh-CN')
             
-            print(f"插件翻译设置: {source_lang} → {target_lang}")  # 调试信息
+
             
             # 获取当前界面上的标签内容
-            simple_english_text = self.simple_tags_english.toPlainText().strip()
-            simple_chinese_text = self.simple_tags_chinese.toPlainText().strip()
-            normal_english_text = self.normal_tags_english.toPlainText().strip()
-            normal_chinese_text = self.normal_tags_chinese.toPlainText().strip()
-            detailed_english_text = self.detailed_tags_english.toPlainText().strip()
-            detailed_chinese_text = self.detailed_tags_chinese.toPlainText().strip()
+            simple_english_text = self.simple_en_edit.toPlainText().strip()
+            simple_chinese_text = self.simple_cn_edit.toPlainText().strip()
+            normal_english_text = self.general_en_edit.toPlainText().strip()
+            normal_chinese_text = self.general_cn_edit.toPlainText().strip()
+            detailed_english_text = self.detailed_en_edit.toPlainText().strip()
+            detailed_chinese_text = self.detailed_cn_edit.toPlainText().strip()
             
             # 根据Google翻译设置确定翻译方向
             translation_direction = f"{source_lang} → {target_lang}"
-            print(f"开始{translation_direction}翻译")
+    
+            
+            translated_any = False
             
             if source_lang == 'en' and target_lang == 'zh-CN':
                 # 英文→中文翻译
-                # 分别检查各标签栏的英文内容
-                simple_english_tags = [tag.strip() for tag in simple_english_text.split(',') if tag.strip()] if simple_english_text else []
-                normal_english_tags = [tag.strip() for tag in normal_english_text.split(',') if tag.strip()] if normal_english_text else []
-                detailed_english_tags = [tag.strip() for tag in detailed_english_text.split(',') if tag.strip()] if detailed_english_text else []
                 
-                print(f"简单标签英文: {simple_english_tags}")
-                print(f"普通标签英文: {normal_english_tags}")
-                print(f"详细标签英文: {detailed_english_tags}")
+                # 智能处理不同类型的标签内容
+                def process_tag_content(text, field_name):
+                    """智能处理标签内容，支持逗号分隔和长文本两种格式"""
+                    if not text:
+                        return [], "empty"
+                    
+                    # 如果文本很长且包含句号，认为是长文本描述
+                    if len(text) > 100 and '.' in text:
+        
+                        return [text], "long_text"
+                    else:
+                        # 短文本按逗号分隔处理
+                        tags = [tag.strip() for tag in text.split(',') if tag.strip()]
+        
+                        return tags, "tag_list"
+                
+                # 处理各类标签
+                simple_english_tags, simple_type = process_tag_content(simple_english_text, "简单标签")
+                normal_english_tags, normal_type = process_tag_content(normal_english_text, "普通标签") 
+                detailed_english_tags, detailed_type = process_tag_content(detailed_english_text, "详细标签")
+                
+                
                 
                 # 分别翻译各标签栏的内容
                 if simple_english_tags:
-                    simple_translations = plugin.translate_tags(simple_english_tags)
-                    simple_chinese_results = [simple_translations.get(tag, tag) for tag in simple_english_tags]
-                    self.simple_tags_chinese.setPlainText(', '.join(simple_chinese_results))
-                    print(f"简单标签翻译结果: {simple_chinese_results}")
+        
+                    if simple_type == "long_text":
+                        # 长文本直接翻译
+                        translation = plugin.translate_text(simple_english_tags[0])
+                        if translation and translation != simple_english_tags[0]:
+                            existing_simple_cn = self.simple_cn_edit.toPlainText().strip()
+                            if existing_simple_cn:
+                                combined_simple_cn = existing_simple_cn + '\n\n' + translation
+                            else:
+                                combined_simple_cn = translation
+                            self.simple_cn_edit.setPlainText(combined_simple_cn)
+    
+                            translated_any = True
+                    else:
+                        # 标签列表逐个翻译
+                        simple_translations = plugin.translate_tags(simple_english_tags)
+                        simple_chinese_results = [simple_translations.get(tag, tag) for tag in simple_english_tags]
+                        existing_simple_cn = self.simple_cn_edit.toPlainText().strip()
+                        if existing_simple_cn:
+                            combined_simple_cn = existing_simple_cn + ', ' + ', '.join(simple_chinese_results)
+                        else:
+                            combined_simple_cn = ', '.join(simple_chinese_results)
+                        self.simple_cn_edit.setPlainText(combined_simple_cn)
+
+                        translated_any = True
                 
                 if normal_english_tags:
-                    normal_translations = plugin.translate_tags(normal_english_tags)
-                    normal_chinese_results = [normal_translations.get(tag, tag) for tag in normal_english_tags]
-                    self.normal_tags_chinese.setPlainText(', '.join(normal_chinese_results))
-                    print(f"普通标签翻译结果: {normal_chinese_results}")
+
+                    if normal_type == "long_text":
+                        # 长文本直接翻译
+                        translation = plugin.translate_text(normal_english_tags[0])
+                        if translation and translation != normal_english_tags[0]:
+                            existing_general_cn = self.general_cn_edit.toPlainText().strip()
+                            if existing_general_cn:
+                                combined_general_cn = existing_general_cn + '\n\n' + translation
+                            else:
+                                combined_general_cn = translation
+                            self.general_cn_edit.setPlainText(combined_general_cn)
+    
+                            translated_any = True
+                    else:
+                        # 标签列表逐个翻译
+                        normal_translations = plugin.translate_tags(normal_english_tags)
+                        normal_chinese_results = [normal_translations.get(tag, tag) for tag in normal_english_tags]
+                        existing_general_cn = self.general_cn_edit.toPlainText().strip()
+                        if existing_general_cn:
+                            combined_general_cn = existing_general_cn + ', ' + ', '.join(normal_chinese_results)
+                        else:
+                            combined_general_cn = ', '.join(normal_chinese_results)
+                        self.general_cn_edit.setPlainText(combined_general_cn)
+
+                        translated_any = True
                 
                 if detailed_english_tags:
-                    detailed_translations = plugin.translate_tags(detailed_english_tags)
-                    detailed_chinese_results = [detailed_translations.get(tag, tag) for tag in detailed_english_tags]
-                    self.detailed_tags_chinese.setPlainText(', '.join(detailed_chinese_results))
-                    print(f"详细标签翻译结果: {detailed_chinese_results}")
+    
+                    if detailed_type == "long_text":
+                        # 长文本直接翻译
+                        translation = plugin.translate_text(detailed_english_tags[0])
+                        if translation and translation != detailed_english_tags[0]:
+                            existing_detailed_cn = self.detailed_cn_edit.toPlainText().strip()
+                            if existing_detailed_cn:
+                                combined_detailed_cn = existing_detailed_cn + '\n\n' + translation
+                            else:
+                                combined_detailed_cn = translation
+                            self.detailed_cn_edit.setPlainText(combined_detailed_cn)
+    
+                            translated_any = True
+                    else:
+                        # 标签列表逐个翻译
+                        detailed_translations = plugin.translate_tags(detailed_english_tags)
+                        detailed_chinese_results = [detailed_translations.get(tag, tag) for tag in detailed_english_tags]
+                        existing_detailed_cn = self.detailed_cn_edit.toPlainText().strip()
+                        if existing_detailed_cn:
+                            combined_detailed_cn = existing_detailed_cn + ', ' + ', '.join(detailed_chinese_results)
+                        else:
+                            combined_detailed_cn = ', '.join(detailed_chinese_results)
+                        self.detailed_cn_edit.setPlainText(combined_detailed_cn)
+
+                        translated_any = True
                     
             elif source_lang == 'zh-CN' and target_lang == 'en':
                 # 中文→英文翻译
@@ -1395,75 +1166,105 @@ class TagManager(QWidget):
                 normal_chinese_tags = [tag.strip() for tag in normal_chinese_text.split(',') if tag.strip()] if normal_chinese_text else []
                 detailed_chinese_tags = [tag.strip() for tag in detailed_chinese_text.split(',') if tag.strip()] if detailed_chinese_text else []
                 
-                print(f"简单标签中文: {simple_chinese_tags}")
-                print(f"普通标签中文: {normal_chinese_tags}")
-                print(f"详细标签中文: {detailed_chinese_tags}")
+
                 
                 # 分别翻译各标签栏的内容
                 if simple_chinese_tags:
                     simple_translations = plugin.translate_tags(simple_chinese_tags)
                     simple_english_results = [simple_translations.get(tag, tag) for tag in simple_chinese_tags]
-                    self.simple_tags_english.setPlainText(', '.join(simple_english_results))
-                    print(f"简单标签翻译结果: {simple_english_results}")
+                    # 保留原有英文标签，追加翻译结果
+                    existing_simple_en = self.simple_en_edit.toPlainText().strip()
+                    if existing_simple_en:
+                        combined_simple_en = existing_simple_en + ', ' + ', '.join(simple_english_results)
+                    else:
+                        combined_simple_en = ', '.join(simple_english_results)
+                    self.simple_en_edit.setPlainText(combined_simple_en)
+                    
+                    translated_any = True
                 
                 if normal_chinese_tags:
                     normal_translations = plugin.translate_tags(normal_chinese_tags)
                     normal_english_results = [normal_translations.get(tag, tag) for tag in normal_chinese_tags]
-                    self.normal_tags_english.setPlainText(', '.join(normal_english_results))
-                    print(f"普通标签翻译结果: {normal_english_results}")
+                    # 保留原有英文标签，追加翻译结果
+                    existing_general_en = self.general_en_edit.toPlainText().strip()
+                    if existing_general_en:
+                        combined_general_en = existing_general_en + ', ' + ', '.join(normal_english_results)
+                    else:
+                        combined_general_en = ', '.join(normal_english_results)
+                    self.general_en_edit.setPlainText(combined_general_en)
+                    
+                    translated_any = True
                 
                 if detailed_chinese_tags:
                     detailed_translations = plugin.translate_tags(detailed_chinese_tags)
                     detailed_english_results = [detailed_translations.get(tag, tag) for tag in detailed_chinese_tags]
-                    self.detailed_tags_english.setPlainText(', '.join(detailed_english_results))
-                    print(f"详细标签翻译结果: {detailed_english_results}")
+                    # 保留原有英文标签，追加翻译结果
+                    existing_detailed_en = self.detailed_en_edit.toPlainText().strip()
+                    if existing_detailed_en:
+                        combined_detailed_en = existing_detailed_en + ', ' + ', '.join(detailed_english_results)
+                    else:
+                        combined_detailed_en = ', '.join(detailed_english_results)
+                    self.detailed_en_edit.setPlainText(combined_detailed_en)
                     
+                    translated_any = True
             else:
                 # 其他语言组合，暂时不支持
-                print(f"不支持的翻译方向: {source_lang} → {target_lang}")  # 调试信息
+    
+                QMessageBox.warning(self, "提示", f"不支持的翻译方向: {source_lang} → {target_lang}")
                 return
-            
-            # 显示成功消息
-            print(f"翻译完成！翻译方向: {translation_direction}")  # 调试信息
             
             # 关闭翻译插件
             plugin.shutdown()
             
+            # 如果有翻译内容，自动保存标签
+            if translated_any:
+                print("翻译完成，自动保存标签到数据库")
+                
+                # 临时禁用编辑模式检查，确保UI能刷新
+                original_editing_state = self.is_editing
+                self.is_editing = False
+                
+                try:
+                    self.save_tags()
+                    
+                    # 刷新UI显示以确保翻译结果正确显示
+                    if self.current_photo:
+                        updated_photo = self.db_manager.get_photo(self.current_photo.get('id'))
+                        if updated_photo:
+                            self.current_photo = updated_photo
+                            self.update_photo_tags_display(updated_photo)
+                            print("✅ UI显示已刷新，翻译结果应该可见")
+                finally:
+                    # 恢复编辑状态
+                    self.is_editing = original_editing_state
+                
+                # 显示翻译完成消息
+                QMessageBox.information(self, "翻译完成", f"标签翻译完成并已保存！\n翻译方向: {translation_direction}")
+            else:
+                QMessageBox.information(self, "提示", "没有找到需要翻译的标签内容")
+            
         except Exception as e:
-            self.logger.error("Failed to translate current photo tags", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
+            self.logger.error("Failed to translate current photo tags: %s", str(e))
             QMessageBox.critical(self, "错误", f"翻译失败：{str(e)}")
     
-    def refresh_current_photo_display(self):
-        """刷新当前照片的显示"""
-        try:
-            if hasattr(self, 'current_photo') and self.current_photo:
-                # 重新从数据库获取最新的照片数据
-                photo_id = self.current_photo.get('id')
-                if photo_id:
-                    updated_photo = self.db_manager.get_photo(photo_id)
-                    if updated_photo:
-                        self.update_photo_tags_display(updated_photo)
-                        self.logger.info(f"刷新了照片 {photo_id} 的显示")
-        except Exception as e:
-            self.logger.error(f"刷新当前照片显示失败: {e}")
-
     def _translate_album_tags(self):
-        """翻译当前相册内所有图片的标签（挨个检查，挨个翻译）"""
+        """翻译当前相册内所有图片的标签"""
         try:
+            print("开始翻译相册内所有图片标签")  # 调试信息
+            
             # 获取当前相册ID
             current_album_id = self._get_current_album_id()
             if not current_album_id:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(self, "提示", "请先选择一个相册，或者确保当前有选中的照片")
+                QMessageBox.warning(self, "提示", "请先选择一个相册")
                 return
             
             # 获取相册内所有图片
             album_photos = self.db_manager.get_album_photos(current_album_id)
             if not album_photos:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(self, "提示", f"相册ID {current_album_id} 中没有图片")
+                QMessageBox.information(self, "提示", "当前相册内没有图片")
                 return
+            
+    
             
             # 创建翻译插件实例
             plugin = self._get_translation_plugin()
@@ -1472,7 +1273,6 @@ class TagManager(QWidget):
             
             # 显示进度对话框
             from PyQt6.QtWidgets import QProgressDialog, QApplication
-            from PyQt6.QtCore import Qt
             progress = QProgressDialog("正在翻译相册标签...", "取消", 0, len(album_photos), self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.setAutoClose(True)
@@ -1482,12 +1282,17 @@ class TagManager(QWidget):
             failed_count = 0
             total_photos = len(album_photos)
             
-            self.logger.info(f"开始翻译相册 {current_album_id}，共 {total_photos} 张图片")
+            # 根据插件设置决定翻译方向
+            source_lang = getattr(plugin, 'source_language', 'en')
+            target_lang = getattr(plugin, 'target_language', 'zh-CN')
+            translation_direction = f"{source_lang} → {target_lang}"
             
-            # 挨个检查，挨个翻译每张图片
+
+            
+            # 挨个翻译每张图片
             for i, photo in enumerate(album_photos):
                 if progress.wasCanceled():
-                    self.logger.info("用户取消了翻译操作")
+                    print("用户取消了翻译操作")
                     break
                 
                 photo_id = photo.get('id')
@@ -1496,514 +1301,483 @@ class TagManager(QWidget):
                 QApplication.processEvents()
                 
                 try:
-                    self.logger.info(f"开始翻译图片 {i+1}/{total_photos} (ID: {photo_id})")
+    
                     
-                    # 挨个翻译每张图片的标签
-                    success = self._translate_single_photo_tags(photo, plugin)
+                    # 翻译单张图片的标签
+                    success = self._translate_single_photo_tags_for_album(photo, plugin, source_lang, target_lang)
                     if success:
                         translated_count += 1
-                        self.logger.info(f"图片 {photo_id} 翻译成功")
                     else:
                         failed_count += 1
-                        self.logger.warning(f"图片 {photo_id} 翻译失败或无需要翻译的标签")
                     
                     # 强制更新进度显示
                     QApplication.processEvents()
                     
                 except Exception as e:
                     failed_count += 1
-                    self.logger.error(f"翻译图片 {photo_id} 时发生异常", error=str(e))
+                    self.logger.error("翻译图片标签失败: %s, error: %s", photo.get('id'), str(e))
                     continue
             
-            # 确保进度对话框正确关闭
+            # 完成进度
             progress.setValue(total_photos)
             progress.close()
             
-            # 确保插件正确关闭
+            # 关闭翻译插件
             try:
                 plugin.shutdown()
             except Exception as e:
-                self.logger.warning(f"插件关闭时发生异常: {e}")
+                self.logger.error(f"插件关闭时发生异常: {e}")
             
             # 显示详细结果
             result_message = (f"相册翻译完成！\n\n"
+                            f"翻译方向: {translation_direction}\n"
                             f"总共处理了 {total_photos} 张图片\n"
                             f"成功翻译了 {translated_count} 张图片\n"
                             f"翻译失败 {failed_count} 张图片\n"
                             f"成功率: {translated_count/total_photos*100:.1f}%")
             
-            print(f"批量翻译完成: {result_message}")
+
+            
+            # 显示翻译完成消息
+            QMessageBox.information(self, "翻译完成", result_message)
             
             # 刷新当前照片的显示，以显示翻译结果
-            self.refresh_current_photo_display()
+            if hasattr(self, 'current_photo') and self.current_photo:
+                self.update_photo_tags_display(self.current_photo)
             
         except Exception as e:
-            self.logger.error("Failed to translate album tags", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
+            self.logger.error("Failed to translate album tags: %s", str(e))
             QMessageBox.critical(self, "错误", f"相册翻译失败：{str(e)}")
     
-    def _translate_single_photo_tags(self, photo: dict, plugin) -> bool:
-        """挨个翻译单张图片的标签"""
+    def _translate_single_photo_tags_for_album(self, photo: dict, plugin, source_lang: str, target_lang: str) -> bool:
+        """为相册翻译功能翻译单张图片的标签"""
         try:
             photo_id = photo.get('id')
             if not photo_id:
-                self.logger.warning(f"图片ID为空，跳过翻译")
                 return False
             
-            # 获取图片的标签数据
-            simple_tags = photo.get('simple_tags', '[]')
-            normal_tags = photo.get('normal_tags', '[]')
-            detailed_tags = photo.get('detailed_tags', '[]')
-            tag_translations = photo.get('tag_translations', '{}')
-            
-            # 解析JSON数据
-            import json
-            try:
-                # 处理可能已经是列表/字典的情况
-                if isinstance(simple_tags, str):
-                    simple_tags_list = json.loads(simple_tags) if simple_tags else []
-                else:
-                    simple_tags_list = simple_tags or []
-                    
-                if isinstance(normal_tags, str):
-                    normal_tags_list = json.loads(normal_tags) if normal_tags else []
-                else:
-                    normal_tags_list = normal_tags or []
-                    
-                if isinstance(detailed_tags, str):
-                    detailed_tags_list = json.loads(detailed_tags) if detailed_tags else []
-                else:
-                    detailed_tags_list = detailed_tags or []
-                    
-                if isinstance(tag_translations, str):
-                    translations_dict = json.loads(tag_translations) if tag_translations else {}
-                else:
-                    translations_dict = tag_translations or {}
-                    
-            except json.JSONDecodeError as e:
-                self.logger.warning(f"解析图片 {photo_id} 标签JSON失败", error=str(e))
+            # 从数据库获取图片的完整标签信息
+            photo_data = self.db_manager.get_photo_by_id(photo_id)
+            if not photo_data:
+                self.logger.warning(f"无法获取图片 {photo_id} 的数据")
                 return False
             
-            # 分离中英文标签
-            def separate_tags_by_language(tags_list):
-                chinese_tags = []
-                english_tags = []
-                for tag in tags_list:
-                    if self._is_chinese_text(tag):
-                        chinese_tags.append(tag)
-                    else:
-                        english_tags.append(tag)
-                return english_tags, chinese_tags
+            # 获取标签数据
+            simple_tags_en = photo_data.get("simple_tags_en", "")
+            simple_tags_cn = photo_data.get("simple_tags_cn", "")
+            general_tags_en = photo_data.get("general_tags_en", "")
+            general_tags_cn = photo_data.get("general_tags_cn", "")
+            detailed_tags_en = photo_data.get("detailed_tags_en", "")
+            detailed_tags_cn = photo_data.get("detailed_tags_cn", "")
             
-            # 分离各类型标签的中英文
-            simple_english, simple_chinese = separate_tags_by_language(simple_tags_list)
-            normal_english, normal_chinese = separate_tags_by_language(normal_tags_list)
-            detailed_english, detailed_chinese = separate_tags_by_language(detailed_tags_list)
+            # 如果没有分离式标签字段，尝试从传统字段获取
+            if not simple_tags_en and not simple_tags_cn:
+                simple_tags = photo_data.get("simple_tags", "")
+                if simple_tags:
+                    try:
+                        import json
+                        simple_tags_list = json.loads(simple_tags) if isinstance(simple_tags, str) else simple_tags
+                        if isinstance(simple_tags_list, list):
+                            # 分离英文和中文标签
+                            english_tags = [tag for tag in simple_tags_list if not self._is_chinese_text(tag)]
+                            chinese_tags = [tag for tag in simple_tags_list if self._is_chinese_text(tag)]
+                            simple_tags_en = ', '.join(english_tags)
+                            simple_tags_cn = ', '.join(chinese_tags)
+                    except:
+                        pass
             
-            # 根据插件设置决定翻译方向
-            source_lang = getattr(plugin, 'source_language', 'en')
-            target_lang = getattr(plugin, 'target_language', 'zh-CN')
+            if not general_tags_en and not general_tags_cn:
+                normal_tags = photo_data.get("normal_tags", "")
+                if normal_tags:
+                    try:
+                        import json
+                        normal_tags_list = json.loads(normal_tags) if isinstance(normal_tags, str) else normal_tags
+                        if isinstance(normal_tags_list, list):
+                            english_tags = [tag for tag in normal_tags_list if not self._is_chinese_text(tag)]
+                            chinese_tags = [tag for tag in normal_tags_list if self._is_chinese_text(tag)]
+                            general_tags_en = ', '.join(english_tags)
+                            general_tags_cn = ', '.join(chinese_tags)
+                    except:
+                        pass
             
-            print(f"图片 {photo_id} 翻译设置: {source_lang} → {target_lang}")  # 调试信息
+            if not detailed_tags_en and not detailed_tags_cn:
+                detailed_tags = photo_data.get("detailed_tags", "")
+                if detailed_tags:
+                    try:
+                        import json
+                        detailed_tags_list = json.loads(detailed_tags) if isinstance(detailed_tags, str) else detailed_tags
+                        if isinstance(detailed_tags_list, list):
+                            english_tags = [tag for tag in detailed_tags_list if not self._is_chinese_text(tag)]
+                            chinese_tags = [tag for tag in detailed_tags_list if self._is_chinese_text(tag)]
+                            detailed_tags_en = ', '.join(english_tags)
+                            detailed_tags_cn = ', '.join(chinese_tags)
+                    except:
+                        pass
             
-            # 分别处理各标签类型的翻译
-            successful_translations = {}
+            translated_any = False
+            updates = {}
             
             if source_lang == 'en' and target_lang == 'zh-CN':
                 # 英文→中文翻译
-                translation_direction = "英文→中文"
                 
-                # 分别翻译各标签类型
-                if simple_english:
-                    simple_translations = plugin.translate_tags(simple_english)
-                    for original_tag, translated_tag in simple_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if normal_english:
-                    normal_translations = plugin.translate_tags(normal_english)
-                    for original_tag, translated_tag in normal_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if detailed_english:
-                    detailed_translations = plugin.translate_tags(detailed_english)
-                    for original_tag, translated_tag in detailed_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                            
-            elif source_lang == 'zh-CN' and target_lang == 'en':
-                # 中文→英文翻译
-                translation_direction = "中文→英文"
-                
-                # 分别翻译各标签类型
-                if simple_chinese:
-                    simple_translations = plugin.translate_tags(simple_chinese)
-                    for original_tag, translated_tag in simple_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if normal_chinese:
-                    normal_translations = plugin.translate_tags(normal_chinese)
-                    for original_tag, translated_tag in normal_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if detailed_chinese:
-                    detailed_translations = plugin.translate_tags(detailed_chinese)
-                    for original_tag, translated_tag in detailed_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                            
-            else:
-                # 其他语言组合，暂时不支持
-                self.logger.warning(f"不支持的翻译方向: {source_lang} → {target_lang}")
-                return False
-            
-            # 检查是否有需要翻译的内容
-            if not successful_translations:
-                self.logger.info(f"图片 {photo_id} 没有需要翻译的标签 ({translation_direction})")
-                return True
-            
-            self.logger.info(f"图片 {photo_id} {translation_direction}翻译完成: {len(successful_translations)} 个")
-            
-            # 根据翻译方向，将翻译结果添加到正确的语言区域
-            if source_lang == 'en' and target_lang == 'zh-CN':
-                # 英文→中文翻译：将翻译结果添加到中文区域
-                print(f"开始分配翻译结果到对应标签区域...")
-                print(f"简单标签英文: {simple_english}")
-                print(f"普通标签英文: {normal_english}")
-                print(f"详细标签英文: {detailed_english}")
-                
-                # 分别处理每种标签类型的翻译结果
-                # 简单标签翻译结果
-                simple_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in simple_english:
-                        simple_translations[original_tag] = translated_tag
-                
-                # 普通标签翻译结果
-                normal_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in normal_english:
-                        normal_translations[original_tag] = translated_tag
-                
-                # 详细标签翻译结果
-                detailed_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in detailed_english:
-                        detailed_translations[original_tag] = translated_tag
-                
-                # 将翻译结果添加到对应的中文区域
-                for original_tag, translated_tag in simple_translations.items():
-                    if translated_tag not in simple_chinese:
-                        simple_chinese.append(translated_tag)
-                        print(f"将简单标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到简单标签中文区域")
-                
-                for original_tag, translated_tag in normal_translations.items():
-                    if translated_tag not in normal_chinese:
-                        normal_chinese.append(translated_tag)
-                        print(f"将普通标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到普通标签中文区域")
-                
-                for original_tag, translated_tag in detailed_translations.items():
-                    if translated_tag not in detailed_chinese:
-                        detailed_chinese.append(translated_tag)
-                        print(f"将详细标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到详细标签中文区域")
-            elif source_lang == 'zh-CN' and target_lang == 'en':
-                # 中文→英文翻译：将翻译结果添加到英文区域
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in simple_chinese:
-                        if translated_tag not in simple_english:
-                            simple_english.append(translated_tag)
-                    elif original_tag in normal_chinese:
-                        if translated_tag not in normal_english:
-                            normal_english.append(translated_tag)
-                    elif original_tag in detailed_chinese:
-                        if translated_tag not in detailed_english:
-                            detailed_english.append(translated_tag)
-            
-            # 重新组合标签列表
-            updated_simple_tags = simple_english + simple_chinese
-            updated_normal_tags = normal_english + normal_chinese
-            updated_detailed_tags = detailed_english + detailed_chinese
-            
-            # 添加调试日志
-            self.logger.info(f"图片 {photo_id} 翻译后标签分类 - 简单: 英文{len(simple_english)}个, 中文{len(simple_chinese)}个")
-            self.logger.info(f"图片 {photo_id} 翻译后标签分类 - 普通: 英文{len(normal_english)}个, 中文{len(normal_chinese)}个")
-            self.logger.info(f"图片 {photo_id} 翻译后标签分类 - 详细: 英文{len(detailed_english)}个, 中文{len(detailed_chinese)}个")
-            
-            # 保存到数据库
-            updates = {
-                'simple_tags': json.dumps(updated_simple_tags, ensure_ascii=False),
-                'normal_tags': json.dumps(updated_normal_tags, ensure_ascii=False),
-                'detailed_tags': json.dumps(updated_detailed_tags, ensure_ascii=False),
-                'tag_translations': json.dumps(translations_dict, ensure_ascii=False)
-            }
-            
-            success = self.db_manager.update_photo(photo_id, updates)
-            if success:
-                print(f"图片 {photo_id} 翻译完成: 成功翻译了 {len(successful_translations)} 个标签！翻译方向: {translation_direction}")
-                return True
-            else:
-                self.logger.warning(f"图片 {photo_id} 保存翻译结果到数据库失败")
-                return False
-            
-        except Exception as e:
-            self.logger.error(f"翻译图片 {photo_id} 时发生异常", error=str(e))
-            return False
+                # 翻译简单标签
+                if simple_tags_en.strip():
+                    simple_english_tags = [tag.strip() for tag in simple_tags_en.split(',') if tag.strip()]
+                    if simple_english_tags:
+                        simple_translations = plugin.translate_tags(simple_english_tags)
+                        simple_chinese_results = [simple_translations.get(tag, tag) for tag in simple_english_tags]
+                        
+                        # 保留原有中文标签，追加翻译结果
+                        if simple_tags_cn.strip():
+                            new_simple_cn = simple_tags_cn + ', ' + ', '.join(simple_chinese_results)
+                        else:
+                            new_simple_cn = ', '.join(simple_chinese_results)
+                        
+                        # 准备更新数据
+                        updates['simple_tags_cn'] = new_simple_cn
 
-    def _translate_photo_tags_in_database(self, photo: dict, plugin) -> bool:
-        """翻译数据库中单张图片的标签（逐张处理）"""
+                        translated_any = True
+                
+                # 翻译普通标签
+                if general_tags_en.strip():
+                    general_english_tags = [tag.strip() for tag in general_tags_en.split(',') if tag.strip()]
+                    if general_english_tags:
+                        general_translations = plugin.translate_tags(general_english_tags)
+                        general_chinese_results = [general_translations.get(tag, tag) for tag in general_english_tags]
+                        
+                        # 保留原有中文标签，追加翻译结果
+                        if general_tags_cn.strip():
+                            new_general_cn = general_tags_cn + ', ' + ', '.join(general_chinese_results)
+                        else:
+                            new_general_cn = ', '.join(general_chinese_results)
+                        
+                        # 准备更新数据
+                        updates['general_tags_cn'] = new_general_cn
+
+                        translated_any = True
+                
+                # 翻译详细标签
+                if detailed_tags_en.strip():
+                    detailed_english_tags = [tag.strip() for tag in detailed_tags_en.split(',') if tag.strip()]
+                    if detailed_english_tags:
+                        detailed_translations = plugin.translate_tags(detailed_english_tags)
+                        detailed_chinese_results = [detailed_translations.get(tag, tag) for tag in detailed_english_tags]
+                        
+                        # 保留原有中文标签，追加翻译结果
+                        if detailed_tags_cn.strip():
+                            new_detailed_cn = detailed_tags_cn + ', ' + ', '.join(detailed_chinese_results)
+                        else:
+                            new_detailed_cn = ', '.join(detailed_chinese_results)
+                        
+                        # 准备更新数据
+                        updates['detailed_tags_cn'] = new_detailed_cn
+
+                        translated_any = True
+                
+            elif source_lang == 'zh-CN' and target_lang == 'en':
+                # 中文→英文翻译
+                
+                # 翻译简单标签
+                if simple_tags_cn.strip():
+                    simple_chinese_tags = [tag.strip() for tag in simple_tags_cn.split(',') if tag.strip()]
+                    if simple_chinese_tags:
+                        simple_translations = plugin.translate_tags(simple_chinese_tags)
+                        simple_english_results = [simple_translations.get(tag, tag) for tag in simple_chinese_tags]
+                        
+                        # 保留原有英文标签，追加翻译结果
+                        if simple_tags_en.strip():
+                            new_simple_en = simple_tags_en + ', ' + ', '.join(simple_english_results)
+                        else:
+                            new_simple_en = ', '.join(simple_english_results)
+                        
+                        # 准备更新数据
+                        updates['simple_tags_en'] = new_simple_en
+
+                        translated_any = True
+                
+                # 翻译普通标签
+                if general_tags_cn.strip():
+                    general_chinese_tags = [tag.strip() for tag in general_tags_cn.split(',') if tag.strip()]
+                    if general_chinese_tags:
+                        general_translations = plugin.translate_tags(general_chinese_tags)
+                        general_english_results = [general_translations.get(tag, tag) for tag in general_chinese_tags]
+                        
+                        # 保留原有英文标签，追加翻译结果
+                        if general_tags_en.strip():
+                            new_general_en = general_tags_en + ', ' + ', '.join(general_english_results)
+                        else:
+                            new_general_en = ', '.join(general_english_results)
+                        
+                        # 准备更新数据
+                        updates['general_tags_en'] = new_general_en
+
+                        translated_any = True
+                
+                # 翻译详细标签
+                if detailed_tags_cn.strip():
+                    detailed_chinese_tags = [tag.strip() for tag in detailed_tags_cn.split(',') if tag.strip()]
+                    if detailed_chinese_tags:
+                        detailed_translations = plugin.translate_tags(detailed_chinese_tags)
+                        detailed_english_results = [detailed_translations.get(tag, tag) for tag in detailed_chinese_tags]
+                        
+                        # 保留原有英文标签，追加翻译结果
+                        if detailed_tags_en.strip():
+                            new_detailed_en = detailed_tags_en + ', ' + ', '.join(detailed_english_results)
+                        else:
+                            new_detailed_en = ', '.join(detailed_english_results)
+                        
+                        # 准备更新数据
+                        updates['detailed_tags_en'] = new_detailed_en
+
+                        translated_any = True
+            
+            # 批量更新数据库
+            if translated_any and updates:
+                try:
+                    success = self.db_manager.update_photo(photo_id, updates)
+                    if success:
+                        # 图片翻译结果保存成功
+                        pass
+                    else:
+                        # 如果批量更新失败，尝试逐个字段更新
+                        for field, value in updates.items():
+                            field_success = self.db_manager.update_photo_field(photo_id, field, value)
+                except Exception as e:
+                    self.logger.error(f"保存翻译结果时发生错误: {e}")
+                    # 尝试逐个字段更新作为备选方案
+                    for field, value in updates.items():
+                        try:
+                            self.db_manager.update_photo_field(photo_id, field, value)
+                        except Exception as field_e:
+                            self.logger.error(f"字段 {field} 更新失败: {field_e}")
+            
+            if translated_any:
+                # 图片翻译完成
+                pass
+            else:
+                # 图片没有需要翻译的标签
+                pass
+            
+            return translated_any
+            
+        except Exception as e:
+            self.logger.error("翻译图片标签失败: %s, error: %s", photo.get('id'), str(e))
+            return False
+    
+    def _translate_single_photo_tags(self, photo: dict, plugin) -> bool:
+        """翻译单张图片的标签 - 使用统一标签系统"""
         try:
             photo_id = photo.get('id')
             if not photo_id:
-                self.logger.warning(f"图片ID为空，跳过翻译")
                 return False
             
-            # 获取图片的标签数据
-            simple_tags = photo.get('simple_tags', '[]')
-            normal_tags = photo.get('normal_tags', '[]')
-            detailed_tags = photo.get('detailed_tags', '[]')
-            tag_translations = photo.get('tag_translations', '{}')
-            
-            # 解析JSON数据
-            import json
-            try:
-                # 处理可能已经是列表/字典的情况
-                if isinstance(simple_tags, str):
-                    simple_tags_list = json.loads(simple_tags) if simple_tags else []
-                else:
-                    simple_tags_list = simple_tags or []
-                    
-                if isinstance(normal_tags, str):
-                    normal_tags_list = json.loads(normal_tags) if normal_tags else []
-                else:
-                    normal_tags_list = normal_tags or []
-                    
-                if isinstance(detailed_tags, str):
-                    detailed_tags_list = json.loads(detailed_tags) if detailed_tags else []
-                else:
-                    detailed_tags_list = detailed_tags or []
-                    
-                if isinstance(tag_translations, str):
-                    translations_dict = json.loads(tag_translations) if tag_translations else {}
-                else:
-                    translations_dict = tag_translations or {}
-                    
-            except json.JSONDecodeError as e:
-                self.logger.warning(f"解析图片 {photo_id} 标签JSON失败", error=str(e))
+            # 从数据库获取图片的完整数据
+            photo_data = self.db_manager.get_photo(photo_id)
+            if not photo_data:
                 return False
             
-            # 分离中英文标签
-            def separate_tags_by_language(tags_list):
-                chinese_tags = []
-                english_tags = []
-                for tag in tags_list:
-                    if self._is_chinese_text(tag):
-                        chinese_tags.append(tag)
-                    else:
-                        english_tags.append(tag)
-                return english_tags, chinese_tags
+            # 使用统一标签系统读取标签数据
+            from src.picman.database.manager import UnifiedTagsAccessor
+            unified_tags = UnifiedTagsAccessor.read_unified_tags(photo_data)
             
-            # 分离各类型标签的中英文
-            simple_english, simple_chinese = separate_tags_by_language(simple_tags_list)
-            normal_english, normal_chinese = separate_tags_by_language(normal_tags_list)
-            detailed_english, detailed_chinese = separate_tags_by_language(detailed_tags_list)
+            # 从统一标签中提取标签数据
+            simple_tags = []
+            normal_tags = []
+            detailed_tags = []
+            
+            # 将英文和中文标签合并为列表格式
+            if unified_tags.get("simple", {}).get("en"):
+                simple_tags.extend([tag.strip() for tag in unified_tags["simple"]["en"].split(',') if tag.strip()])
+            if unified_tags.get("simple", {}).get("zh"):
+                simple_tags.extend([tag.strip() for tag in unified_tags["simple"]["zh"].split(',') if tag.strip()])
+                
+            if unified_tags.get("normal", {}).get("en"):
+                normal_tags.extend([tag.strip() for tag in unified_tags["normal"]["en"].split(',') if tag.strip()])
+            if unified_tags.get("normal", {}).get("zh"):
+                normal_tags.extend([tag.strip() for tag in unified_tags["normal"]["zh"].split(',') if tag.strip()])
+                
+            if unified_tags.get("detailed", {}).get("en"):
+                detailed_tags.extend([tag.strip() for tag in unified_tags["detailed"]["en"].split(',') if tag.strip()])
+            if unified_tags.get("detailed", {}).get("zh"):
+                detailed_tags.extend([tag.strip() for tag in unified_tags["detailed"]["zh"].split(',') if tag.strip()])
             
             # 根据插件设置决定翻译方向
             source_lang = getattr(plugin, 'source_language', 'en')
             target_lang = getattr(plugin, 'target_language', 'zh-CN')
             
-            print(f"批量翻译插件设置: {source_lang} → {target_lang}")  # 调试信息
-            
-            # 分别处理各标签类型的翻译
-            successful_translations = {}
+            translated = False
             
             if source_lang == 'en' and target_lang == 'zh-CN':
                 # 英文→中文翻译
-                translation_direction = "英文→中文"
-                
-                # 分别翻译各标签类型
-                if simple_english:
-                    simple_translations = plugin.translate_tags(simple_english)
-                    for original_tag, translated_tag in simple_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if normal_english:
-                    normal_translations = plugin.translate_tags(normal_english)
-                    for original_tag, translated_tag in normal_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if detailed_english:
-                    detailed_translations = plugin.translate_tags(detailed_english)
-                    for original_tag, translated_tag in detailed_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                            
+                translated |= self._translate_english_to_chinese(photo_id, simple_tags, normal_tags, detailed_tags, plugin)
             elif source_lang == 'zh-CN' and target_lang == 'en':
                 # 中文→英文翻译
-                translation_direction = "中文→英文"
-                
-                # 分别翻译各标签类型
-                if simple_chinese:
-                    simple_translations = plugin.translate_tags(simple_chinese)
-                    for original_tag, translated_tag in simple_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if normal_chinese:
-                    normal_translations = plugin.translate_tags(normal_chinese)
-                    for original_tag, translated_tag in normal_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                
-                if detailed_chinese:
-                    detailed_translations = plugin.translate_tags(detailed_chinese)
-                    for original_tag, translated_tag in detailed_translations.items():
-                        if original_tag != translated_tag:
-                            successful_translations[original_tag] = translated_tag
-                            translations_dict[original_tag] = translated_tag
-                            
-            else:
-                # 其他语言组合，暂时不支持
-                self.logger.warning(f"不支持的翻译方向: {source_lang} → {target_lang}")
-                return False
+                translated |= self._translate_chinese_to_english(photo_id, simple_tags, normal_tags, detailed_tags, plugin)
             
-            # 检查是否有需要翻译的内容
-            if not successful_translations:
-                self.logger.info(f"图片 {photo_id} 没有需要翻译的标签 ({translation_direction})")
-                return True
-            
-            self.logger.info(f"图片 {photo_id} {translation_direction}翻译完成: {len(successful_translations)} 个")
-            
-            # 根据翻译方向，将翻译结果添加到正确的语言区域
-            if source_lang == 'en' and target_lang == 'zh-CN':
-                # 英文→中文翻译：将翻译结果添加到中文区域
-                print(f"开始分配翻译结果到对应标签区域...")
-                print(f"简单标签英文: {simple_english}")
-                print(f"普通标签英文: {normal_english}")
-                print(f"详细标签英文: {detailed_english}")
-                
-                # 分别处理每种标签类型的翻译结果
-                # 简单标签翻译结果
-                simple_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in simple_english:
-                        simple_translations[original_tag] = translated_tag
-                
-                # 普通标签翻译结果
-                normal_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in normal_english:
-                        normal_translations[original_tag] = translated_tag
-                
-                # 详细标签翻译结果
-                detailed_translations = {}
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in detailed_english:
-                        detailed_translations[original_tag] = translated_tag
-                
-                # 将翻译结果添加到对应的中文区域
-                for original_tag, translated_tag in simple_translations.items():
-                    if translated_tag not in simple_chinese:
-                        simple_chinese.append(translated_tag)
-                        print(f"将简单标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到简单标签中文区域")
-                
-                for original_tag, translated_tag in normal_translations.items():
-                    if translated_tag not in normal_chinese:
-                        normal_chinese.append(translated_tag)
-                        print(f"将普通标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到普通标签中文区域")
-                
-                for original_tag, translated_tag in detailed_translations.items():
-                    if translated_tag not in detailed_chinese:
-                        detailed_chinese.append(translated_tag)
-                        print(f"将详细标签 '{original_tag}' 的翻译 '{translated_tag}' 添加到详细标签中文区域")
-            elif source_lang == 'zh-CN' and target_lang == 'en':
-                # 中文→英文翻译：将翻译结果添加到英文区域
-                for original_tag, translated_tag in successful_translations.items():
-                    if original_tag in simple_chinese:
-                        if translated_tag not in simple_english:
-                            simple_english.append(translated_tag)
-                    elif original_tag in normal_chinese:
-                        if translated_tag not in normal_english:
-                            normal_english.append(translated_tag)
-                    elif original_tag in detailed_chinese:
-                        if translated_tag not in detailed_english:
-                            detailed_english.append(translated_tag)
-            
-            # 重新组合标签列表
-            updated_simple_tags = simple_english + simple_chinese
-            updated_normal_tags = normal_english + normal_chinese
-            updated_detailed_tags = detailed_english + detailed_chinese
-            
-            # 添加调试日志
-            self.logger.info(f"翻译后标签分类 - 简单: 英文{len(simple_english)}个, 中文{len(simple_chinese)}个")
-            self.logger.info(f"翻译后标签分类 - 普通: 英文{len(normal_english)}个, 中文{len(normal_chinese)}个")
-            self.logger.info(f"翻译后标签分类 - 详细: 英文{len(detailed_english)}个, 中文{len(detailed_chinese)}个")
-            
-            # 保存到数据库
-            updates = {
-                'simple_tags': json.dumps(updated_simple_tags, ensure_ascii=False),
-                'normal_tags': json.dumps(updated_normal_tags, ensure_ascii=False),
-                'detailed_tags': json.dumps(updated_detailed_tags, ensure_ascii=False),
-                'tag_translations': json.dumps(translations_dict, ensure_ascii=False)
-            }
-            
-            success = self.db_manager.update_photo(photo_id, updates)
-            if success:
-                # 直接更新界面显示，绕过编辑保护
-                self.is_editing = False  # 临时关闭编辑保护
-                
-                # 直接更新界面显示翻译结果
-                if source_lang == 'en' and target_lang == 'zh-CN':
-                    # 英文→中文翻译：更新中文标签栏
-                    simple_chinese_text = ', '.join(simple_chinese)
-                    normal_chinese_text = ', '.join(normal_chinese)
-                    detailed_chinese_text = ', '.join(detailed_chinese)
-                    
-                    self.simple_tags_chinese.setPlainText(simple_chinese_text)
-                    self.normal_tags_chinese.setPlainText(normal_chinese_text)
-                    self.detailed_tags_chinese.setPlainText(detailed_chinese_text)
-                    
-                elif source_lang == 'zh-CN' and target_lang == 'en':
-                    # 中文→英文翻译：更新英文标签栏
-                    simple_english_text = ', '.join(simple_english)
-                    normal_english_text = ', '.join(normal_english)
-                    detailed_english_text = ', '.join(detailed_english)
-                    
-                    self.simple_tags_english.setPlainText(simple_english_text)
-                    self.normal_tags_english.setPlainText(normal_english_text)
-                    self.detailed_tags_english.setPlainText(detailed_english_text)
-                
-                self.is_editing = True   # 重新开启编辑保护
-                
-                # 显示成功消息
-                from PyQt6.QtWidgets import QMessageBox
-                print(f"翻译完成: 成功翻译了 {len(successful_translations)} 个标签！翻译方向: {translation_direction}")
-            else:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "警告", "保存翻译结果到数据库失败")
-            
-            # 关闭翻译插件
-            plugin.shutdown()
+            return translated
             
         except Exception as e:
-            self.logger.error("Failed to translate current photo tags", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "错误", f"翻译失败：{str(e)}")
+            self.logger.error("翻译图片标签失败: %s, error: %s", photo.get('id'), str(e))
+            return False
+    
+    def _translate_english_to_chinese(self, photo_id: int, simple_tags: list, normal_tags: list, detailed_tags: list, plugin) -> bool:
+        """英文标签翻译为中文"""
+        try:
+            translated = False
+            
+            # 翻译简单标签
+            if simple_tags:
+                english_simple = [tag for tag in simple_tags if not self._is_chinese_text(tag)]
+                if english_simple:
+                    translations = plugin.translate_tags(english_simple)
+                    for tag in english_simple:
+                        if tag in translations and translations[tag] != tag:
+                            simple_tags.append(translations[tag])
+                            translated = True
+            
+            # 翻译普通标签
+            if normal_tags:
+                english_normal = [tag for tag in normal_tags if not self._is_chinese_text(tag)]
+                if english_normal:
+                    translations = plugin.translate_tags(english_normal)
+                    for tag in english_normal:
+                        if tag in translations and translations[tag] != tag:
+                            normal_tags.append(translations[tag])
+                            translated = True
+            
+            # 翻译详细标签
+            if detailed_tags:
+                english_detailed = [tag for tag in detailed_tags if not self._is_chinese_text(tag)]
+                if english_detailed:
+                    translations = plugin.translate_tags(english_detailed)
+                    for tag in english_detailed:
+                        if tag in translations and translations[tag] != tag:
+                            detailed_tags.append(translations[tag])
+                            translated = True
+            
+            # 如果翻译了标签，更新数据库
+            if translated:
+                self._update_photo_tags_in_database(photo_id, simple_tags, normal_tags, detailed_tags)
+            
+            return translated
+            
+        except Exception as e:
+            self.logger.error("英文翻译中文失败: %s, error: %s", photo_id, str(e))
+            return False
+    
+    def _translate_chinese_to_english(self, photo_id: int, simple_tags: list, normal_tags: list, detailed_tags: list, plugin) -> bool:
+        """中文标签翻译为英文"""
+        try:
+            translated = False
+            
+            # 翻译简单标签
+            if simple_tags:
+                chinese_simple = [tag for tag in simple_tags if self._is_chinese_text(tag)]
+                if chinese_simple:
+                    translations = plugin.translate_tags(chinese_simple)
+                    for tag in chinese_simple:
+                        if tag in translations and translations[tag] != tag:
+                            simple_tags.append(translations[tag])
+                            translated = True
+            
+            # 翻译普通标签
+            if normal_tags:
+                chinese_normal = [tag for tag in normal_tags if self._is_chinese_text(tag)]
+                if chinese_normal:
+                    translations = plugin.translate_tags(chinese_normal)
+                    for tag in chinese_normal:
+                        if tag in translations and translations[tag] != tag:
+                            normal_tags.append(translations[tag])
+                            translated = True
+            
+            # 翻译详细标签
+            if detailed_tags:
+                chinese_detailed = [tag for tag in detailed_tags if self._is_chinese_text(tag)]
+                if chinese_detailed:
+                    translations = plugin.translate_tags(chinese_detailed)
+                    for tag in chinese_detailed:
+                        if tag in translations and translations[tag] != tag:
+                            detailed_tags.append(translations[tag])
+                            translated = True
+            
+            # 如果翻译了标签，更新数据库
+            if translated:
+                self._update_photo_tags_in_database(photo_id, simple_tags, normal_tags, detailed_tags)
+            
+            return translated
+            
+        except Exception as e:
+            self.logger.error("中文翻译英文失败: %s, error: %s", photo_id, str(e))
+            return False
+    
+    def _update_photo_tags_in_database(self, photo_id: int, simple_tags: list, normal_tags: list, detailed_tags: list):
+        """更新数据库中的图片标签 - 使用统一标签系统"""
+        try:
+            from src.picman.database.manager import UnifiedTagsAccessor
+            from datetime import datetime
+            
+            # 获取当前照片数据
+            photo_data = self.db_manager.get_photo(photo_id)
+            if not photo_data:
+                self.logger.error(f"无法获取照片数据: {photo_id}")
+                return False
+            
+            # 读取现有的统一标签数据
+            unified_tags = UnifiedTagsAccessor.read_unified_tags(photo_data)
+            
+            # 将翻译结果分离为英文和中文，并更新到统一标签结构
+            simple_en, simple_cn = self._separate_tags_by_language(simple_tags)
+            normal_en, normal_cn = self._separate_tags_by_language(normal_tags)
+            detailed_en, detailed_cn = self._separate_tags_by_language(detailed_tags)
+            
+            # 更新统一标签结构
+            unified_tags["simple"]["en"] = ', '.join(simple_en) if simple_en else unified_tags["simple"]["en"]
+            unified_tags["simple"]["zh"] = ', '.join(simple_cn) if simple_cn else unified_tags["simple"]["zh"]
+            unified_tags["normal"]["en"] = ', '.join(normal_en) if normal_en else unified_tags["normal"]["en"]
+            unified_tags["normal"]["zh"] = ', '.join(normal_cn) if normal_cn else unified_tags["normal"]["zh"]
+            unified_tags["detailed"]["en"] = ', '.join(detailed_en) if detailed_en else unified_tags["detailed"]["en"]
+            unified_tags["detailed"]["zh"] = ', '.join(detailed_cn) if detailed_cn else unified_tags["detailed"]["zh"]
+            
+            # 更新元数据
+            unified_tags["metadata"] = {
+                "last_updated": datetime.now().isoformat(),
+                "source": "translation_result"
+            }
+            
+            # 使用统一标签系统保存（会自动双写）
+            success = self.db_manager.update_photo(photo_id, {
+                "unified_tags_data": unified_tags
+            })
+            
+            if success:
+                self.logger.info(f"翻译结果保存成功: photo_id={photo_id}")
+                
+                # 如果是当前显示的照片，更新UI显示
+                if self.current_photo and self.current_photo.get('id') == photo_id:
+                    self.current_photo = self.db_manager.get_photo(photo_id)
+                    self.update_photo_tags_display(self.current_photo)
+                    
+                return True
+            else:
+                self.logger.error(f"翻译结果保存失败: photo_id={photo_id}")
+                return False
+                
+        except Exception as e:
+            self.logger.error("更新数据库标签失败: photo_id=%s, error=%s", photo_id, str(e))
+    
+    def _separate_tags_by_language(self, tags_list: list) -> tuple:
+        """将标签按语言分离"""
+        chinese_tags = []
+        english_tags = []
+        
+        for tag in tags_list:
+            if isinstance(tag, str):
+                if self._is_chinese_text(tag):
+                    chinese_tags.append(tag)
+                else:
+                    english_tags.append(tag)
+        
+        return english_tags, chinese_tags
     
     def _get_translation_plugin(self):
         """获取翻译插件实例"""
@@ -2059,8 +1833,7 @@ class TagManager(QWidget):
                 return self._get_builtin_translator()
                 
         except Exception as e:
-            self.logger.error("Failed to get translation plugin", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
+            self.logger.error("Failed to get translation plugin: %s", str(e))
             QMessageBox.critical(self, "错误", f"无法初始化翻译插件：{str(e)}")
             return self._get_builtin_translator()
     
@@ -2099,175 +1872,409 @@ class TagManager(QWidget):
         translations = self._get_builtin_translations()
         return BuiltinTranslator(translations)
     
+    def _get_builtin_translations(self) -> Dict[str, str]:
+        """获取内置翻译词典"""
+        return {
+            "beautiful": "美丽",
+            "landscape": "风景",
+            "portrait": "肖像",
+            "nature": "自然",
+            "city": "城市",
+            "building": "建筑",
+            "flower": "花",
+            "tree": "树",
+            "mountain": "山",
+            "sea": "海",
+            "sky": "天空",
+            "sunset": "日落",
+            "sunrise": "日出",
+            "night": "夜晚",
+            "day": "白天",
+            "winter": "冬天",
+            "summer": "夏天",
+            "spring": "春天",
+            "autumn": "秋天",
+            "hot": "热",
+            "cold": "冷",
+            "warm": "温暖",
+            "cool": "凉爽",
+        }
+    
     def _get_current_album_id(self) -> Optional[int]:
         """获取当前相册ID"""
         try:
-            # 尝试从主窗口获取当前相册ID
+            # 方法1：从主窗口获取当前相册ID
             if hasattr(self, 'parent') and self.parent():
                 main_window = self.parent()
-                if hasattr(main_window, 'current_album_id') and main_window.current_album_id:
-                    return main_window.current_album_id
-                elif hasattr(main_window, 'get_current_album_id'):
-                    return main_window.get_current_album_id()
+                while main_window and not hasattr(main_window, 'current_album_id'):
+                    main_window = main_window.parent()
+                
+                if main_window and hasattr(main_window, 'current_album_id'):
+                    current_album_id = main_window.current_album_id
+                    if current_album_id:
+                        self.logger.info(f"从主窗口获取到当前相册ID: {current_album_id}")
+                        return current_album_id
             
-            # 尝试从相册管理器获取
+            # 方法2：从相册管理器获取当前相册ID
             if hasattr(self, 'album_manager') and self.album_manager:
-                if hasattr(self.album_manager, 'current_album_id') and self.album_manager.current_album_id:
-                    return self.album_manager.current_album_id
-                elif hasattr(self.album_manager, 'get_current_album_id'):
-                    return self.album_manager.get_current_album_id()
+                if hasattr(self.album_manager, 'current_album_id'):
+                    current_album_id = self.album_manager.current_album_id
+                    if current_album_id:
+                        self.logger.info(f"从相册管理器获取到当前相册ID: {current_album_id}")
+                        return current_album_id
             
-            # 尝试从当前照片获取相册信息
-            if hasattr(self, 'current_photo') and self.current_photo:
-                # 如果当前有选中的照片，尝试获取其所属相册
+            # 方法3：从当前照片信息推断相册ID
+            if self.current_photo:
                 photo_id = self.current_photo.get('id')
                 if photo_id:
                     # 查询照片所属的相册
-                    with self.db_manager.get_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            SELECT album_id FROM album_photos 
-                            WHERE photo_id = ? 
-                            LIMIT 1
-                        """, (photo_id,))
-                        result = cursor.fetchone()
-                        if result:
-                            return result[0]
+                    album_photos = self.db_manager.get_photo_albums(photo_id)
+                    if album_photos:
+                        current_album_id = album_photos[0].get('album_id')
+                        if current_album_id:
+                            self.logger.info(f"从当前照片推断相册ID: {current_album_id}")
+                            return current_album_id
             
-            # 如果无法获取，返回None而不是默认值
+            # 方法4：从数据库获取最近使用的相册
+            try:
+                recent_albums = self.db_manager.get_recent_albums(limit=1)
+                if recent_albums:
+                    current_album_id = recent_albums[0].get('id')
+                    if current_album_id:
+                        self.logger.info(f"使用最近使用的相册ID: {current_album_id}")
+                        return current_album_id
+            except Exception as e:
+                self.logger.debug(f"获取最近相册失败: {e}")
+            
             self.logger.warning("无法获取当前相册ID")
             return None
             
         except Exception as e:
-            self.logger.error("Failed to get current album ID", error=str(e))
+            self.logger.error("Failed to get current album ID: %s", str(e))
             return None
     
-    def save_tags_to_database(self):
-        """保存标签到数据库"""
+    def _is_chinese_text(self, text: str) -> bool:
+        """判断文本是否包含中文字符"""
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+        return False
+    
+    def save_tags(self):
+        """保存当前照片的标签"""
         try:
             if not self.current_photo:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(self, "提示", "请先选择一张照片")
+                QMessageBox.warning(self, "提示", "请先选择一张照片")
                 return
             
-            # 设置编辑状态，防止显示更新覆盖用户输入
-            self.is_editing = True
-            
-            # 获取当前标签内容
-            simple_english = self.simple_tags_english.toPlainText().strip()
-            simple_chinese = self.simple_tags_chinese.toPlainText().strip()
-            normal_english = self.normal_tags_english.toPlainText().strip()
-            normal_chinese = self.normal_tags_chinese.toPlainText().strip()
-            detailed_english = self.detailed_tags_english.toPlainText().strip()
-            detailed_chinese = self.detailed_tags_chinese.toPlainText().strip()
-            tags_notes = self.tags_notes.toPlainText().strip()
-            
-            # 解析标签为列表
-            import json
-            
-            # 简单标签 - 分别保存英文和中文
-            simple_english_list = []
-            simple_chinese_list = []
-            if simple_english:
-                simple_english_list = [tag.strip() for tag in simple_english.split(',') if tag.strip()]
-            if simple_chinese:
-                simple_chinese_list = [tag.strip() for tag in simple_chinese.split(',') if tag.strip()]
-            
-            # 普通标签 - 分别保存英文和中文
-            normal_english_list = []
-            normal_chinese_list = []
-            if normal_english:
-                normal_english_list = [tag.strip() for tag in normal_english.split(',') if tag.strip()]
-            if normal_chinese:
-                normal_chinese_list = [tag.strip() for tag in normal_chinese.split(',') if tag.strip()]
-            
-            # 详细标签 - 分别保存英文和中文
-            detailed_english_list = []
-            detailed_chinese_list = []
-            if detailed_english:
-                detailed_english_list = [tag.strip() for tag in detailed_english.split(',') if tag.strip()]
-            if detailed_chinese:
-                detailed_chinese_list = [tag.strip() for tag in detailed_chinese.split(',') if tag.strip()]
-            
-            # 构建翻译字典 - 从英文标签到中文标签的映射
-            translations_dict = {}
-            
-            # 简单标签翻译映射
-            for i, eng_tag in enumerate(simple_english_list):
-                if i < len(simple_chinese_list):
-                    translations_dict[eng_tag] = simple_chinese_list[i]
-            
-            # 普通标签翻译映射
-            for i, eng_tag in enumerate(normal_english_list):
-                if i < len(normal_chinese_list):
-                    translations_dict[eng_tag] = normal_chinese_list[i]
-            
-            # 详细标签翻译映射
-            for i, eng_tag in enumerate(detailed_english_list):
-                if i < len(detailed_chinese_list):
-                    translations_dict[eng_tag] = detailed_chinese_list[i]
-            
-            # 更新照片数据
             photo_id = self.current_photo.get('id')
-            if photo_id:
-                # 合并英文和中文标签到原有字段，保持翻译功能
-                simple_tags_list = simple_english_list + simple_chinese_list
-                normal_tags_list = normal_english_list + normal_chinese_list
-                detailed_tags_list = detailed_english_list + detailed_chinese_list
-                
-                updates = {
-                    'simple_tags': json.dumps(simple_tags_list, ensure_ascii=False),
-                    'normal_tags': json.dumps(normal_tags_list, ensure_ascii=False),
-                    'detailed_tags': json.dumps(detailed_tags_list, ensure_ascii=False),
-                    'tag_translations': json.dumps(translations_dict, ensure_ascii=False),
-                    'notes': tags_notes  # 保存标签备注
-                }
-                
-                # 调用数据库更新方法
-                success = self.db_manager.update_photo(photo_id, updates)
-                
-                if success:
-                    self.logger.info("Tags saved to database successfully", 
-                                   photo_id=photo_id,
-                                   simple_tags_count=len(simple_tags_list),
-                                   normal_tags_count=len(normal_tags_list),
-                                   detailed_tags_count=len(detailed_tags_list),
-                                   translations_count=len(translations_dict),
-                                   has_notes=bool(tags_notes))
-                    
-                    # 显示成功消息
-                    from PyQt6.QtWidgets import QMessageBox
-                    QMessageBox.information(self, "成功", "标签和备注已成功保存到数据库")
-                    
-                    # 更新内存中的照片数据
-                    self.current_photo.update(updates)
-                    
-                    # 不要重新加载显示，保持用户当前的编辑状态
-                    # 这样可以避免翻译逻辑覆盖用户刚输入的内容
-                    
-                else:
-                    self.logger.error("Failed to save tags to database", photo_id=photo_id)
-                    from PyQt6.QtWidgets import QMessageBox
-                    QMessageBox.warning(self, "警告", "保存标签到数据库失败")
+            if not photo_id:
+                QMessageBox.warning(self, "提示", "无效的照片ID")
+                return
             
-            # 保存完成后，重置编辑状态
-            self.is_editing = False
+            # 获取界面上的标签内容
+            simple_en = self.simple_en_edit.toPlainText().strip()
+            simple_cn = self.simple_cn_edit.toPlainText().strip()
+            general_en = self.general_en_edit.toPlainText().strip()
+            general_cn = self.general_cn_edit.toPlainText().strip()
+            detailed_en = self.detailed_en_edit.toPlainText().strip()
+            detailed_cn = self.detailed_cn_edit.toPlainText().strip()
+            notes = self.notes_edit.toPlainText().strip()
+            
+            # 使用统一标签系统保存
+            from src.picman.database.manager import UnifiedTagsAccessor
+            from datetime import datetime
+            
+            # 获取当前照片的统一标签数据
+            photo_data = self.db_manager.get_photo(photo_id)
+            if not photo_data:
+                QMessageBox.warning(self, "保存失败", "无法获取照片数据")
+                return
+            
+            # 读取现有的统一标签数据
+            unified_tags = UnifiedTagsAccessor.read_unified_tags(photo_data)
+            
+            # 更新统一标签结构
+            unified_tags["simple"]["en"] = simple_en
+            unified_tags["simple"]["zh"] = simple_cn
+            unified_tags["normal"]["en"] = general_en
+            unified_tags["normal"]["zh"] = general_cn
+            unified_tags["detailed"]["en"] = detailed_en
+            unified_tags["detailed"]["zh"] = detailed_cn
+            unified_tags["notes"] = notes
+            
+            # 更新元数据
+            unified_tags["metadata"] = {
+                "last_updated": datetime.now().isoformat(),
+                "source": "tag_manager_manual_edit"
+            }
+            
+            # 使用统一标签系统保存（会自动双写）
+            success = self.db_manager.update_photo(photo_id, {
+                "unified_tags_data": unified_tags
+            })
+            
+            # 如果统一标签保存失败，尝试直接保存分离字段
+            if not success:
+                self.logger.warning("Unified tags save failed, trying direct field save")
+                success = self.db_manager.update_photo(photo_id, {
+                    "simple_tags_en": simple_en,
+                    "simple_tags_cn": simple_cn,
+                    "general_tags_en": general_en,
+                    "general_tags_cn": general_cn,
+                    "detailed_tags_en": detailed_en,
+                    "detailed_tags_cn": detailed_cn,
+                    "notes": notes
+                })
+            
+            if success:
+                QMessageBox.information(self, "保存成功", "标签已成功保存")
+                self.logger.info("Tags saved successfully: photo_id=%s", photo_id)
+                
+                # 重新获取最新的照片数据并刷新UI显示
+                self.current_photo = self.db_manager.get_photo(photo_id)
+                if self.current_photo:
+                    self.update_photo_tags_display(self.current_photo)
+
+            else:
+                QMessageBox.warning(self, "保存失败", "标签保存失败，请重试")
+                self.logger.error("Failed to save tags: photo_id=%s", photo_id)
             
         except Exception as e:
-            self.logger.error("Failed to save tags to database", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "错误", f"保存标签失败：{str(e)}")
-        finally:
-            # 确保编辑状态被重置
-            self.is_editing = False
+            self.logger.error("Failed to save tags: %s", str(e))
+            QMessageBox.critical(self, "错误", f"保存标签时发生错误: {str(e)}")
     
-    def show_plugin_config(self):
-        """显示插件配置对话框"""
-        try:
-            from .plugin_config_dialog import PluginConfigDialog
-            dialog = PluginConfigDialog(self)
-            dialog.exec()
-        except Exception as e:
-            self.logger.error("Failed to show plugin config", error=str(e))
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "错误", f"无法打开插件配置：{str(e)}")
+
+    def _is_chinese_text(self, text: str) -> bool:
+        """检查文本是否包含中文字符"""
+        if not text:
+            return False
+        
+        # 检查是否包含中文字符
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+        return False
+    
+    def toggle_edit_mode(self):
+        """切换编辑模式"""
+        self.is_editing = not self.is_editing
+        self.edit_mode_btn.setChecked(self.is_editing)
+        
+        # 更新UI状态
+        self._update_ui_editing_state()
+        
+        # 更新按钮状态
+        self.save_btn.setEnabled(self.is_editing)
+        
+        # 显示状态信息
+        if self.is_editing:
+            self.logger.info("Entered edit mode")
+        else:
+            self.logger.info("Exited edit mode")
+    
+    def _update_ui_editing_state(self):
+        """更新UI编辑状态"""
+        # 更新所有标签输入框的只读状态
+        self.simple_en_edit.setReadOnly(not self.is_editing)
+        self.simple_cn_edit.setReadOnly(not self.is_editing)
+        self.general_en_edit.setReadOnly(not self.is_editing)
+        self.general_cn_edit.setReadOnly(not self.is_editing)
+        self.detailed_en_edit.setReadOnly(not self.is_editing)
+        self.detailed_cn_edit.setReadOnly(not self.is_editing)
+        self.notes_edit.setReadOnly(not self.is_editing)
+        
+        # 更新按钮文本
+        if self.is_editing:
+            self.edit_mode_btn.setText("退出编辑")
+            self.edit_mode_btn.setStyleSheet("QPushButton { background-color: #e74c3c; color: white; }")
+        else:
+            self.edit_mode_btn.setText("编辑模式")
+            self.edit_mode_btn.setStyleSheet("")
+        
+        self.logger.info("UI editing state updated: is_editing=%s", self.is_editing)
+
+
+class TagManager(QWidget):
+    """Tag management widget with tabbed interface."""
+    
+    tag_selected = pyqtSignal(int)  # tag_id
+    tags_updated = pyqtSignal()
+    
+    def __init__(self, db_manager: DatabaseManager, album_manager=None):
+        super().__init__()
+        self.db_manager = db_manager
+        self.album_manager = album_manager
+        self.logger = logging.getLogger("picman.gui.tag_manager")
+        
+        # 当前选中的照片
+        self.current_photo = None
+        
+        # 编辑状态标志
+        self.is_editing = False
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the user interface."""
+        layout = QVBoxLayout(self)
+        
+        # 创建标签页控件
+        self.tab_widget = QTabWidget()
+        
+        # 创建AI图片信息面板
+        self.ai_panel = AIImageInfoPanel(self.db_manager, self.album_manager)
+        self.tab_widget.addTab(self.ai_panel, "AI图片信息")
+        
+        # 创建照片标签信息面板
+        self.photo_tags_panel = PhotoTagsPanel(self.db_manager, self.album_manager)
+        self.tab_widget.addTab(self.photo_tags_panel, "照片标签信息")
+        
+        layout.addWidget(self.tab_widget)
+    
+    def update_photo_display(self, photo_data: dict):
+        """更新照片显示"""
+        self.current_photo = photo_data
+        
+        # 更新两个面板的显示
+        self.ai_panel.update_ai_info_display(photo_data)
+        self.photo_tags_panel.update_photo_tags_display(photo_data)
+    
+    def set_editing_mode(self, editing: bool):
+        """设置编辑模式"""
+        self.is_editing = editing
+        
+        # 更新两个面板的编辑模式
+        self.ai_panel.is_editing = editing
+        self.photo_tags_panel.is_editing = editing
+        
+        # 更新UI状态
+        self._update_ui_editing_state()
+    
+    def _update_ui_editing_state(self):
+        """更新UI编辑状态"""
+        # 更新AI面板的编辑状态
+        self.ai_panel.model_name_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.model_version_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.lora_name_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.lora_weight_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.task_id_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.version_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.stylize_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.quality_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.aspect_ratio_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.chaos_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.weirdness_edit.setReadOnly(not self.is_editing)
+        
+        self.ai_panel.raw_mode_radio.setEnabled(self.is_editing)
+        self.ai_panel.tile_mode_radio.setEnabled(self.is_editing)
+        self.ai_panel.niji_mode_radio.setEnabled(self.is_editing)
+        
+        # 更新新添加字段的编辑状态
+        self.ai_panel.positive_prompt_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.negative_prompt_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.sampler_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.steps_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.cfg_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.seed_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.size_edit.setReadOnly(not self.is_editing)
+        self.ai_panel.software_edit.setReadOnly(not self.is_editing)
+        
+        # 更新照片标签面板的编辑状态
+        self.photo_tags_panel.simple_en_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.simple_cn_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.general_en_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.general_cn_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.detailed_en_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.detailed_cn_edit.setReadOnly(not self.is_editing)
+        self.photo_tags_panel.notes_edit.setReadOnly(not self.is_editing)
+    
+    # 保持原有的公共接口，确保兼容性
+    def update_photo_tags_display(self, photo_data: dict):
+        """更新照片标签显示（兼容性方法）"""
+        self.update_photo_display(photo_data)
+    
+    def _update_ai_info_display(self, photo_data: dict):
+        """更新AI信息显示（兼容性方法）"""
+        self.update_photo_display(photo_data)
+    
+    def refresh_current_photo_display(self):
+        """刷新当前照片显示（兼容性方法）"""
+        if self.current_photo:
+            self.update_photo_display(self.current_photo)
+    
+    def save_tags_to_database(self):
+        """保存标签到数据库（兼容性方法）"""
+        # 这里可以添加保存逻辑
+        pass
+    
+    def _is_chinese_text(self, text: str) -> bool:
+        """检查文本是否包含中文字符"""
+        if not text:
+            return False
+        
+        # 检查是否包含中文字符
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+        return False
+    
+
+    
+    
+class TagManager(QWidget):
+    """标签管理器主类"""
+    
+    photo_selected = pyqtSignal(int)  # 照片选择信号
+    tag_selected = pyqtSignal(int)    # 标签选择信号
+    
+    def __init__(self, db_manager: DatabaseManager, album_manager=None):
+        super().__init__()
+        self.db_manager = db_manager
+        self.album_manager = album_manager
+        self.logger = logging.getLogger("picman.gui.tag_manager")
+        
+        # 当前选中的照片
+        self.current_photo = None
+        
+        # 编辑状态标志
+        self.is_editing = False
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the user interface."""
+        layout = QVBoxLayout(self)
+        
+        # 创建标签页
+        self.tab_widget = QTabWidget()
+        
+        # AI图片信息标签页
+        self.ai_info_panel = AIImageInfoPanel(self.db_manager, self.album_manager)
+        self.tab_widget.addTab(self.ai_info_panel, "AI信息")
+        
+        # 照片标签信息标签页
+        self.photo_tags_panel = PhotoTagsPanel(self.db_manager, self.album_manager)
+        self.tab_widget.addTab(self.photo_tags_panel, "标签信息")
+        
+        layout.addWidget(self.tab_widget)
+    
+    def update_photo_display(self, photo_data: dict):
+        """更新照片显示"""
+        self.current_photo = photo_data
+        
+        # 更新AI信息面板
+        self.ai_info_panel.update_ai_info_display(photo_data)
+        
+        # 更新标签信息面板
+        self.photo_tags_panel.current_photo = photo_data
+        self.photo_tags_panel.update_photo_tags_display(photo_data)
+    
+    def set_editing_mode(self, editing: bool):
+        """设置编辑模式"""
+        self.is_editing = editing
+        self.ai_info_panel.is_editing = editing
+        self.photo_tags_panel.is_editing = editing
+        
+        # 更新UI控件的只读状态
+        # 这里可以添加更多的UI状态更新逻辑

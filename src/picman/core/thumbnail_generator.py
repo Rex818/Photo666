@@ -3,10 +3,14 @@ Thumbnail generation functionality.
 """
 
 import os
+import logging
 from pathlib import Path
-from typing import Optional, Tuple
-import structlog
+from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageOps, ExifTags
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from ..config.manager import ConfigManager
 
@@ -16,7 +20,7 @@ class ThumbnailGenerator:
     
     def __init__(self, config_manager: ConfigManager):
         self.config = config_manager
-        self.logger = structlog.get_logger("picman.core.thumbnail")
+        self.logger = logger
         
         # Create thumbnails directory
         self.thumbnail_dir = Path("data/thumbnails")
@@ -32,7 +36,7 @@ class ThumbnailGenerator:
                         if ExifTags.TAGS[orientation] == 'Orientation':
                             return exif[orientation]
         except Exception as e:
-            self.logger.debug("Failed to get EXIF orientation", error=str(e))
+            self.logger.debug("Failed to get EXIF orientation: error=%s", str(e))
         return 1  # Default orientation
     
     def _rotate_image_by_exif(self, img: Image.Image) -> Image.Image:
@@ -62,7 +66,7 @@ class ThumbnailGenerator:
             image_path = Path(image_path)
             
             if not image_path.exists():
-                self.logger.error("Image file not found", path=str(image_path))
+                self.logger.error("Image file not found: %s", str(image_path))
                 return None
             
             # Generate thumbnail filename
@@ -92,16 +96,12 @@ class ThumbnailGenerator:
                 # Save thumbnail
                 img.save(thumb_path, "JPEG", quality=quality, optimize=True)
             
-            self.logger.info("Thumbnail generated", 
-                           original=str(image_path),
-                           thumbnail=str(thumb_path))
+            self.logger.info("Thumbnail generated: original=%s, thumbnail=%s", str(image_path), str(thumb_path))
             
             return str(thumb_path)
             
         except Exception as e:
-            self.logger.error("Failed to generate thumbnail", 
-                            path=str(image_path), 
-                            error=str(e))
+            self.logger.error("Failed to generate thumbnail: path=%s, error=%s", str(image_path), str(e))
             return None
     
     def get_thumbnail_path(self, image_path: str) -> Optional[str]:
@@ -118,14 +118,12 @@ class ThumbnailGenerator:
             thumb_path = self.get_thumbnail_path(image_path)
             if thumb_path and Path(thumb_path).exists():
                 Path(thumb_path).unlink()
-                self.logger.info("Thumbnail deleted", thumbnail=thumb_path)
+                self.logger.info("Thumbnail deleted: thumbnail=%s", thumb_path)
                 return True
             return False
             
         except Exception as e:
-            self.logger.error("Failed to delete thumbnail", 
-                            path=str(image_path), 
-                            error=str(e))
+            self.logger.error("Failed to delete thumbnail: path=%s, error=%s", str(image_path), str(e))
             return False
     
     def cleanup_orphaned_thumbnails(self) -> int:
@@ -141,9 +139,9 @@ class ThumbnailGenerator:
                 # Check if original image exists (simplified logic)
                 # In a real implementation, you'd query the database
                 
-            self.logger.info("Thumbnail cleanup completed", removed=removed_count)
+            self.logger.info("Thumbnail cleanup completed: removed=%s", removed_count)
             return removed_count
             
         except Exception as e:
-            self.logger.error("Failed to cleanup thumbnails", error=str(e))
+            self.logger.error(f"Failed to cleanup thumbnails: {str(e)}")
             return 0

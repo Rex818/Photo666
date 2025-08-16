@@ -1,0 +1,6 @@
+# 插件私有依赖（如需）
+# 复用项目根 requirements.txt 中的 torch/transformers/janus 等，不在此重复安装
+Pillow>=10.0.0
+
+
+

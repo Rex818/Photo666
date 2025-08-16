@@ -1,0 +1,47 @@
+{
+    "models": [
+        {
+            "id": "deepseek-ai/Janus-Pro-1B",
+            "name": "Janus-Pro-1B",
+            "description": "轻量级模型，速度快，适合快速反推",
+            "size": "1B",
+            "parameters": "1B",
+            "download_url": "https://huggingface.co/deepseek-ai/Janus-Pro-1B",
+            "local_path": null,
+            "is_downloaded": false,
+            "download_size": "2.1GB",
+            "requirements": {
+                "min_memory": "4GB",
+                "recommended_memory": "8GB",
+                "gpu_memory": "2GB"
+            }
+        },
+        {
+            "id": "deepseek-ai/Janus-Pro-7B",
+            "name": "Janus-Pro-7B",
+            "description": "高质量模型，精度高，适合详细分析",
+            "size": "7B",
+            "parameters": "7B",
+            "download_url": "https://huggingface.co/deepseek-ai/Janus-Pro-7B",
+            "local_path": null,
+            "is_downloaded": false,
+            "download_size": "14.2GB",
+            "requirements": {
+                "min_memory": "16GB",
+                "recommended_memory": "32GB",
+                "gpu_memory": "8GB"
+            }
+        }
+    ],
+    "default_model": "deepseek-ai/Janus-Pro-1B",
+    "model_types": {
+        "reverse_inference": {
+            "supported_models": ["deepseek-ai/Janus-Pro-1B", "deepseek-ai/Janus-Pro-7B"],
+            "default_model": "deepseek-ai/Janus-Pro-1B"
+        },
+        "image_generation": {
+            "supported_models": ["deepseek-ai/Janus-Pro-1B", "deepseek-ai/Janus-Pro-7B"],
+            "default_model": "deepseek-ai/Janus-Pro-7B"
+        }
+    }
+}

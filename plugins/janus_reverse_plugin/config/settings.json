@@ -1,0 +1,45 @@
+{
+    "user_settings": {
+        "last_used_model": "deepseek-ai/Janus-Pro-1B",
+        "last_used_model_path": "",
+        "auto_download_models": true,
+        "use_gpu": true,
+        "max_memory_usage": 0.8,
+        "save_results": true,
+        "result_file_suffix": ".txt",
+        "cache_enabled": true,
+        "cache_size": 100,
+        "cache_timeout": 3600
+    },
+    "reverse_inference_settings": {
+        "last_question": "Describe this image in very detail.",
+        "last_temperature": 0.1,
+        "last_top_p": 0.95,
+        "last_max_new_tokens": 1024,
+        "last_seed": 12339
+    },
+    "image_generation_settings": {
+        "last_prompt": "",
+        "last_seed": 12345,
+        "last_batch_size": 1,
+        "last_cfg_weight": 5.0,
+        "last_temperature": 1.0,
+        "last_top_p": 0.95,
+        "last_image_size": 384
+    },
+    "ui_settings": {
+        "window_width": 800,
+        "window_height": 600,
+        "config_dialog_width": 600,
+        "config_dialog_height": 500,
+        "progress_dialog_width": 500,
+        "progress_dialog_height": 300
+    },
+    "image_selection_settings": {
+        "last_selected_images": [
+            "C:\\Users\\Administrator\\Desktop\\testpic\\测试1\\6.png",
+            "C:\\Users\\Administrator\\Desktop\\testpic\\测试1\\7.png",
+            "C:\\Users\\Administrator\\Desktop\\testpic\\测试1\\8.png"
+        ]
+    }
+}

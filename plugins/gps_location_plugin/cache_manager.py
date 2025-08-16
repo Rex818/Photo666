@@ -53,8 +53,7 @@ class LocationCache:
         # 初始化数据库
         self._init_database()
         
-        self.logger.info("Location cache initialized", 
-                        db_path=self.db_path, precision=self.precision)
+        self.logger.info("Location cache initialized: db_path=%s, precision=%s", self.db_path, self.precision)
     
     def _init_database(self):
         """初始化数据库表结构"""
@@ -159,8 +158,7 @@ class LocationCache:
             
             row = cursor.fetchone()
             if not row:
-                self.logger.debug("No cache hit found", 
-                                lat=coordinate.latitude, lon=coordinate.longitude)
+                self.logger.debug("No cache hit found: lat=%s, lon=%s", coordinate.latitude, coordinate.longitude)
                 return None
             
             # 解析缓存数据
@@ -198,16 +196,15 @@ class LocationCache:
                 query_time=datetime.fromisoformat(cache_data['created_time'])
             )
             
-            self.logger.debug("Cache hit found", 
-                            cache_id=cache_data['id'],
-                            hit_count=cache_data['hit_count'] + 1)
+            self.logger.debug("Cache hit found: cache_id=%s, hit_count=%s", cache_data['id'],
+                            cache_data['hit_count'] + 1)
             return location_info
                 
         except sqlite3.Error as e:
-            self.logger.error("Cache query failed", error=str(e))
+            self.logger.error("Cache query failed: error=%s", str(e))
             raise CacheDatabaseError(f"缓存查询失败: {str(e)}", self.db_path, str(e))
         except Exception as e:
-            self.logger.error("Unexpected error in cache query", error=str(e))
+            self.logger.error("Unexpected error in cache query: error=%s", str(e))
             raise CacheError(f"缓存查询异常: {str(e)}", "query")
     
     def cache_location(self, coordinate: GPSCoordinate, location: LocationInfo):
@@ -265,15 +262,14 @@ class LocationCache:
                 conn.commit()
                 conn.close()
             
-            self.logger.debug("Location cached successfully", 
-                            lat=coordinate.latitude, lon=coordinate.longitude,
-                            location=location.to_display_string("short"))
+            self.logger.debug("Location cached successfully: lat=%s, lon=%s, location=%s", 
+                            coordinate.latitude, coordinate.longitude, location.to_display_string("short"))
                 
         except sqlite3.Error as e:
-            self.logger.error("Cache storage failed", error=str(e))
+            self.logger.error("Cache storage failed: error=%s", str(e))
             raise CacheDatabaseError(f"缓存存储失败: {str(e)}", self.db_path, str(e))
         except Exception as e:
-            self.logger.error("Unexpected error in cache storage", error=str(e))
+            self.logger.error("Unexpected error in cache storage: error=%s", str(e))
             raise CacheError(f"缓存存储异常: {str(e)}", "store")
     
     def _update_cache_usage(self, cache_id: int):
@@ -293,8 +289,7 @@ class LocationCache:
                 conn.commit()
                 
         except sqlite3.Error as e:
-            self.logger.warning("Failed to update cache usage", 
-                              cache_id=cache_id, error=str(e))
+            self.logger.warning("Failed to update cache usage: cache_id=%s, error=%s", cache_id, str(e))
     
     def clear_expired_cache(self, max_age_days: int = 30) -> int:
         """清理过期的缓存数据
@@ -320,12 +315,11 @@ class LocationCache:
                 deleted_count = cursor.rowcount
                 conn.commit()
                 
-                self.logger.info("Expired cache entries cleared", 
-                               count=deleted_count, max_age_days=max_age_days)
+                self.logger.info("Expired cache entries cleared: count=%s, max_age_days=%s", deleted_count, max_age_days)
                 return deleted_count
                 
         except sqlite3.Error as e:
-            self.logger.error("Cache cleanup failed", error=str(e))
+            self.logger.error("Cache cleanup failed: error=%s", str(e))
             raise CacheDatabaseError(f"缓存清理失败: {str(e)}", self.db_path, str(e))
     
     def clear_all_cache(self) -> int:
@@ -346,11 +340,11 @@ class LocationCache:
                 cursor.execute('DELETE FROM location_cache')
                 conn.commit()
                 
-                self.logger.info("All cache entries cleared", count=total_count)
+                self.logger.info("All cache entries cleared: count=%d", total_count)
                 return total_count
                 
         except sqlite3.Error as e:
-            self.logger.error("Cache clear failed", error=str(e))
+            self.logger.error("Cache clear failed: error=%s", str(e))
             raise CacheDatabaseError(f"缓存清空失败: {str(e)}", self.db_path, str(e))
     
     def get_cache_stats(self) -> Dict[str, Any]:
@@ -399,7 +393,7 @@ class LocationCache:
                 }
                 
         except sqlite3.Error as e:
-            self.logger.error("Failed to get cache stats", error=str(e))
+            self.logger.error("Failed to get cache stats: error=%s", str(e))
             return {'error': str(e)}
     
     def _is_coordinate_match(self, coord1: GPSCoordinate, coord2: GPSCoordinate) -> bool:
@@ -447,11 +441,10 @@ class LocationCache:
                 
                 conn.commit()
                 
-                self.logger.info("Cache optimized", 
-                               deleted=delete_count, remaining=max_entries)
+                self.logger.info("Cache optimized: deleted=%s, remaining=%s", delete_count, max_entries)
                 
         except sqlite3.Error as e:
-            self.logger.error("Cache optimization failed", error=str(e))
+            self.logger.error("Cache optimization failed: error=%s", str(e))
             raise CacheDatabaseError(f"缓存优化失败: {str(e)}", self.db_path, str(e))
     
     def export_cache(self, export_path: str) -> bool:
@@ -481,12 +474,11 @@ class LocationCache:
                 with open(export_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 
-                self.logger.info("Cache exported successfully", 
-                               path=export_path, count=len(data))
+                self.logger.info("Cache exported successfully: path=%s, count=%s", export_path, len(data))
                 return True
                 
         except Exception as e:
-            self.logger.error("Cache export failed", error=str(e))
+            self.logger.error("Cache export failed: error=%s", str(e))
             return False
     
     def import_cache(self, import_path: str) -> bool:
@@ -537,10 +529,9 @@ class LocationCache:
                 
                 conn.commit()
                 
-                self.logger.info("Cache imported successfully", 
-                               path=import_path, count=imported_count)
+                self.logger.info("Cache imported successfully: path=%s, count=%s", import_path, imported_count)
                 return True
                 
         except Exception as e:
-            self.logger.error("Cache import failed", error=str(e))
+            self.logger.error("Cache import failed: error=%s", str(e))
             return False

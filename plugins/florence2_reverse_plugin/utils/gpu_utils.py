@@ -5,9 +5,9 @@ GPU工具类
 import torch
 import psutil
 from typing import Dict, Any, Optional
-import structlog
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class GPUUtils:
@@ -19,7 +19,7 @@ class GPUUtils:
         try:
             return torch.cuda.is_available()
         except Exception as e:
-            logger.error("检查CUDA可用性失败", error=str(e))
+            logger.error("检查CUDA可用性失败: %s", str(e))
             return False
     
     @staticmethod
@@ -49,7 +49,7 @@ class GPUUtils:
             return gpu_info
             
         except Exception as e:
-            logger.error("获取GPU信息失败", error=str(e))
+            logger.error("获取GPU信息失败: %s", str(e))
             return {"available": False, "error": str(e)}
     
     @staticmethod
@@ -80,7 +80,7 @@ class GPUUtils:
             }
             
         except Exception as e:
-            logger.error("获取内存使用情况失败", error=str(e))
+            logger.error("获取内存使用情况失败: %s", str(e))
             return {}
     
     @staticmethod
@@ -98,12 +98,12 @@ class GPUUtils:
                 # 清理指定GPU缓存
                 with torch.cuda.device(device_id):
                     torch.cuda.empty_cache()
-                logger.info("已清理GPU缓存", device_id=device_id)
+                logger.info("已清理GPU缓存: device_id=%s", device_id)
             
             return True
             
         except Exception as e:
-            logger.error("清理GPU缓存失败", device_id=device_id, error=str(e))
+            logger.error("清理GPU缓存失败: device_id=%s, error=%s", device_id, str(e))
             return False
     
     @staticmethod
@@ -144,15 +144,13 @@ class GPUUtils:
             # 限制最大批大小
             batch_size = min(batch_size, 16)
             
-            logger.info("计算最优批大小", 
-                       model_size_mb=model_size_mb,
-                       total_memory=GPUUtils.format_memory(total_memory),
-                       batch_size=batch_size)
+            logger.info("计算最优批大小: model_size_mb=%s, total_memory=%s, batch_size=%s", 
+                       model_size_mb, GPUUtils.format_memory(total_memory), batch_size)
             
             return batch_size
             
         except Exception as e:
-            logger.error("计算最优批大小失败", error=str(e))
+            logger.error("计算最优批大小失败: %s", str(e))
             return 1
     
     @staticmethod
@@ -180,11 +178,11 @@ class GPUUtils:
                 device_id = torch.cuda.current_device()
             
             torch.cuda.set_per_process_memory_fraction(fraction, device_id)
-            logger.info("设置GPU内存使用比例", device_id=device_id, fraction=fraction)
+            logger.info("设置GPU内存使用比例: device_id=%s, fraction=%s", device_id, fraction)
             return True
             
         except Exception as e:
-            logger.error("设置GPU内存使用比例失败", device_id=device_id, fraction=fraction, error=str(e))
+            logger.error("设置GPU内存使用比例失败: device_id=%s, fraction=%s, error=%s", device_id, fraction, str(e))
             return False
     
     @staticmethod
@@ -204,5 +202,5 @@ class GPUUtils:
             return device_info
             
         except Exception as e:
-            logger.error("获取设备信息失败", error=str(e))
+            logger.error("获取设备信息失败: %s", str(e))
             return {"cuda_available": False, "error": str(e)} 
