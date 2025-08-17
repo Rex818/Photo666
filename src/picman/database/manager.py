@@ -385,7 +385,17 @@ class DatabaseManager:
                     "rating": int,
                     "is_favorite": bool,
                     "thumbnail_path": str,
-                    "notes": str
+                    "notes": str,
+                    # 新的分离式标签字段
+                    "simple_tags_en": str,    # 简单标签(英文)
+                    "simple_tags_cn": str,    # 简单标签(中文)
+                    "general_tags_en": str,   # 普通标签(英文)
+                    "general_tags_cn": str,   # 普通标签(中文)
+                    "detailed_tags_en": str,  # 详细标签(英文)
+                    "detailed_tags_cn": str,  # 详细标签(中文)
+                    "positive_prompt": str,   # 正向提示词
+                    "negative_prompt": str,   # 负向提示词
+                    "unified_tags": str       # 统一标签字段(JSON)
                 }, pk="id")
                 
                 # Create indexes for performance optimization
@@ -478,7 +488,8 @@ class DatabaseManager:
                     ("detailed_tags_en", "TEXT DEFAULT ''"),
                     ("detailed_tags_cn", "TEXT DEFAULT ''"),
                     ("positive_prompt", "TEXT DEFAULT ''"),
-                    ("negative_prompt", "TEXT DEFAULT ''")
+                    ("negative_prompt", "TEXT DEFAULT ''"),
+                    ("unified_tags", "TEXT DEFAULT ''")
                 ]
                 
                 for column_name, column_def in new_columns:
@@ -530,7 +541,17 @@ class DatabaseManager:
                 "rating": photo_data.get("rating", 0),
                 "is_favorite": photo_data.get("is_favorite", False),
                 "thumbnail_path": photo_data.get("thumbnail_path", ""),
-                "notes": photo_data.get("notes", "")
+                "notes": photo_data.get("notes", ""),
+                # 新的分离式标签字段
+                "simple_tags_en": photo_data.get("simple_tags_en", ""),
+                "simple_tags_cn": photo_data.get("simple_tags_cn", ""),
+                "general_tags_en": photo_data.get("general_tags_en", ""),
+                "general_tags_cn": photo_data.get("general_tags_cn", ""),
+                "detailed_tags_en": photo_data.get("detailed_tags_en", ""),
+                "detailed_tags_cn": photo_data.get("detailed_tags_cn", ""),
+                "positive_prompt": photo_data.get("positive_prompt", ""),
+                "negative_prompt": photo_data.get("negative_prompt", ""),
+                "unified_tags": photo_data.get("unified_tags", "")
             }
             
             result = db["photos"].insert(photo_record)
@@ -1602,7 +1623,8 @@ class DatabaseManager:
                 "inserted_ids": inserted_ids
             }
             
-            self.logger.info("Batch insert photos completed", **result)
+            self.logger.info("Batch insert photos completed: inserted=%d, errors=%d, total=%d", 
+                           result["inserted"], result["errors"], result["total"])
             
             return result
             

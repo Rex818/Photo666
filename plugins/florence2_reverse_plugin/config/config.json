@@ -20,7 +20,7 @@
     "do_sample": true,
     "temperature": 0.7,
     "top_p": 0.9,
-    "default_level": "detailed"
+    "default_level": "normal"
   },
   "output": {
     "save_to_file": true,

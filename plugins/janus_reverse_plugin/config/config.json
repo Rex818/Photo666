@@ -50,7 +50,7 @@
     },
     "model": {
         "model_id": "deepseek-ai/Janus-Pro-1B",
-        "model_path": "",
+        "model_path": "E:/models/Janus-Pro-1B",
         "auto_download": true
     },
     "image_selection": {

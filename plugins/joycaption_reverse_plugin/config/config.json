@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "models": {
-    "default_model": "fancyfeast/llama-joycaption-alpha-two-hf-llava",
+    "default_model": "fancyfeast/llama-joycaption-beta-one-hf-llava",
     "available_models": [
       "fancyfeast/llama-joycaption-beta-one-hf-llava",
       "fancyfeast/llama-joycaption-alpha-two-hf-llava"

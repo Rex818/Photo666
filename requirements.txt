@@ -99,6 +99,16 @@ factory-boy>=3.2.0
 faker>=18.0.0
 
 # ========================================
+# 插件依赖整合
+# ========================================
+# 以下依赖涵盖了所有插件的需求：
+# - florence2_reverse_plugin: transformers, torch, torchvision, accelerate, safetensors, pillow, numpy, einops, timm
+# - joycaption_reverse_plugin: torch, transformers, huggingface_hub, pillow, requests, bitsandbytes, accelerate, safetensors
+# - janus_reverse_plugin: janus, torch, transformers, pillow, numpy, requests, tqdm
+# - janus_text2image_plugin: pillow
+# - gps_location_plugin: requests, geopy
+
+# ========================================
 # 特殊依赖
 # ========================================
 

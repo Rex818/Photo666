@@ -1,7 +1,7 @@
 {
     "user_settings": {
         "last_used_model": "deepseek-ai/Janus-Pro-1B",
-        "last_used_model_path": "",
+        "last_used_model_path": "E:/models/Janus-Pro-1B",
         "auto_download_models": true,
         "use_gpu": true,
         "max_memory_usage": 0.8,
