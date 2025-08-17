@@ -119,7 +119,16 @@
    pip install -r requirements.txt
    ```
 
+   
+
+   - **补充安装对应cuda128版本的torch**
+
+   ```bash
+   pip install torch==2.7.0+cu128 torchvision==0.22.0+cu128 torchaudio==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+   ```
+
 4. **启动程序**
+
    ```bash
    python main.py
    ```

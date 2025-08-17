@@ -17,7 +17,21 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from attrdict import AttrDict
+# 修复Python 3.10+兼容性问题
+try:
+    from attrdict import AttrDict
+except ImportError:
+    # 如果attrdict不可用，使用内置dict作为替代
+    class AttrDict(dict):
+        def __getattr__(self, key):
+            try:
+                return self[key]
+            except KeyError:
+                raise AttributeError(key)
+        
+        def __setattr__(self, key, value):
+            self[key] = value
+
 from einops import rearrange
 import torch
 from transformers.configuration_utils import PretrainedConfig

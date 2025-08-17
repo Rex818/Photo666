@@ -1,6 +1,6 @@
-﻿# Photo666 v0.3.0 Dependencies
+# Photo666 v0.3.0 Dependencies
 # ========================================
-# 核心依赖
+# Core Dependencies
 # ========================================
 
 # Core GUI Framework
@@ -8,7 +8,6 @@ PyQt6>=6.5.0
 
 # Image Processing
 Pillow>=10.2.0
-pillow>=10.2.0  # 兼容性别名
 
 # Configuration Management
 PyYAML>=6.0.0
@@ -24,101 +23,92 @@ asyncio-mqtt>=0.11.0
 aiofiles>=22.0.0
 
 # ========================================
-# AI模型依赖
+# AI Model Dependencies
 # ========================================
 
-# PyTorch (所有AI插件都需要)
-torch>=2.0.1
-torchvision>=0.15.0
+# PyTorch (CUDA 12.8 compatible, supports GPU inference)
+# Note: These versions are optimized for CUDA 12.8 to ensure GPU acceleration
+# Versions adjusted based on actual virtual environment configuration
+torch>=2.7.0+cu128
+torchvision>=0.22.0+cu128
+torchaudio>=2.7.0+cu128
 
-# Transformers (AI模型框架)
-transformers>=4.39.0,!=4.50.*
+# Alternative installation methods if the above versions fail:
+# Method 1: Install from PyTorch official (recommended)
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+# Method 2: Install using conda
+# conda install pytorch torchvision torchaudio pytorch-cuda=12.8 -c pytorch -c nvidia
+
+# Transformers (AI model framework)
+# Version adjusted based on actual virtual environment configuration
+transformers>=4.55.0
 
 # Hugging Face Hub
 huggingface_hub>=0.16.0
 
-# Accelerate (模型加速)
-accelerate>=0.26.0
+# Accelerate (model acceleration)
+# Version adjusted based on actual virtual environment configuration
+accelerate>=1.9.0
 
-# Safetensors (模型文件格式)
+# Safetensors (model file format)
 safetensors>=0.3.0
 
-# Bitsandbytes (量化支持)
+# Bitsandbytes (quantization support)
 bitsandbytes>=0.41.0
 
 # ========================================
-# 计算机视觉依赖
+# Computer Vision Dependencies
 # ========================================
 
-# NumPy (数值计算)
+# NumPy (numerical computing)
 numpy>=1.24.0
 
-# Einops (张量操作)
+# Einops (tensor operations)
 einops>=0.8.0
 
-# Timm (图像模型)
+# Timm (image models)
 timm>=1.0.0
 
 # ========================================
-# 网络和工具依赖
+# Network and Utility Dependencies
 # ========================================
 
-# HTTP请求
+# HTTP requests
 requests>=2.28.0
 
-# 地理计算
+# Geographic calculations
 geopy>=2.3.0
 
-# 进度条
+# Progress bar
 tqdm>=4.60.0
 
 # ========================================
-# 开发依赖 (可选)
+# Plugin Dependencies Integration
 # ========================================
-
-# Testing
-pytest>=7.0.0
-pytest-cov>=4.0.0
-pytest-qt>=4.2.0
-
-# Code Quality
-black>=23.0.0
-mypy>=1.0.0
-
-# Documentation
-sphinx>=5.0.0
-sphinx-rtd-theme>=1.2.0
-
-# Packaging
-PyInstaller>=5.0.0
-setuptools>=65.0.0
-wheel>=0.38.0
-
-# Testing Utilities
-factory-boy>=3.2.0
-faker>=18.0.0
-
-# ========================================
-# 插件依赖整合
-# ========================================
-# 以下依赖涵盖了所有插件的需求：
+# The following dependencies cover all plugin requirements:
 # - florence2_reverse_plugin: transformers, torch, torchvision, accelerate, safetensors, pillow, numpy, einops, timm
 # - joycaption_reverse_plugin: torch, transformers, huggingface_hub, pillow, requests, bitsandbytes, accelerate, safetensors
-# - janus_reverse_plugin: janus, torch, transformers, pillow, numpy, requests, tqdm
-# - janus_text2image_plugin: pillow
+# - janus_reverse_plugin: torch, transformers, pillow, numpy, requests, tqdm (Janus code integrated)
+# - janus_text2image_plugin: pillow (Janus code integrated)
 # - gps_location_plugin: requests, geopy
 
 # ========================================
-# 特殊依赖
+# Special Dependencies
 # ========================================
 
-# Janus AI模型 (从GitHub安装)
-git+https://github.com/deepseek-ai/Janus.git
+# Janus AI model code is integrated in janus_text2image_plugin
+# No need to download from GitHub repeatedly
 
 # ========================================
-# 注意事项
+# Important Notes
 # ========================================
-# 1. 首次安装可能需要较长时间，因为需要下载AI模型
-# 2. 建议在虚拟环境中安装
-# 3. 如果遇到网络问题，可以使用国内镜像源
-# 4. 某些依赖可能需要特定的CUDA版本支持
+# 1. First installation may take a long time due to AI model downloads
+# 2. Recommended to install in virtual environment
+# 3. If network issues occur, use domestic mirror sources
+# 4. CUDA version requirement: CUDA 12.8 or compatible version
+# 5. GPU support: Ensure PyTorch CUDA version is installed for GPU acceleration
+# 6. If pip installation of CUDA version fails, use PyTorch official command:
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# 7. Janus-related functions are integrated in plugins, no additional installation needed
+# 8. Verify GPU support: python -c "import torch; print('CUDA available:', torch.cuda.is_available())"

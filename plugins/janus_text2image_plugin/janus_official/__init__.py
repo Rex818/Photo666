@@ -17,7 +17,6 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
 # check if python version is above 3.10
 import sys
 
@@ -29,3 +28,57 @@ if sys.version_info >= (3, 10):
 
     for type_name in collections.abc.__all__:
         setattr(collections, type_name, getattr(collections.abc, type_name))
+    
+    # 特别处理Mapping类型
+    try:
+        from collections.abc import Mapping
+        collections.Mapping = Mapping
+    except ImportError:
+        pass
+
+# 导出Janus核心模块
+try:
+    from .models import VLMImageProcessor, VLChatProcessor, MultiModalityCausalLM
+    from .janusflow.models import SigLIPVisionTransformer, VQModel
+    
+    __all__ = [
+        "VLMImageProcessor",
+        "VLChatProcessor", 
+        "MultiModalityCausalLM",
+        "SigLIPVisionTransformer",
+        "VQModel",
+    ]
+    
+    # 为了兼容性，也导出为janus命名空间
+    class JanusNamespace:
+        """Janus模块命名空间，提供兼容性导入"""
+        from .models import VLChatProcessor, MultiModalityCausalLM, VLMImageProcessor
+        from .janusflow.models import SigLIPVisionTransformer, VQModel
+        
+        models = type('models', (), {
+            'VLChatProcessor': VLChatProcessor,
+            'MultiModalityCausalLM': MultiModalityCausalLM,
+            'VLMImageProcessor': VLMImageProcessor,
+        })
+        
+        def __getattr__(self, name):
+            if name == 'models':
+                return self.models
+            raise AttributeError(f"module 'janus' has no attribute '{name}'")
+    
+    # 创建janus模块的别名
+    janus = JanusNamespace()
+    
+    # 为了兼容性，也导出janus_official模块
+    janus_official = type('janus_official', (), {
+        'janus': janus,
+        'models': type('models', (), {
+            'VLChatProcessor': VLChatProcessor,
+            'MultiModalityCausalLM': MultiModalityCausalLM,
+            'VLMImageProcessor': VLMImageProcessor,
+        })
+    })
+    
+except ImportError as e:
+    print(f"Warning: Some Janus modules could not be imported: {e}")
+    __all__ = []

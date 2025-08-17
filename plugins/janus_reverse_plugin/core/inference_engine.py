@@ -13,12 +13,39 @@ from .model_manager import ModelManager
 # 尝试导入Janus库
 try:
     from transformers import AutoModelForCausalLM
-    from janus.models import VLChatProcessor
-    JANUS_AVAILABLE = True
-    logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").info("Janus库导入成功")
-except ImportError:
+    
+    # 尝试从本地janus_official模块导入
+    import sys
+    import os
+    plugin_dir = Path(os.path.dirname(os.path.dirname(__file__)))
+    janus_official_path = plugin_dir.parent / "janus_text2image_plugin" / "janus_official"
+    
+    if janus_official_path.exists():
+        # 将janus_official路径添加到sys.path
+        sys.path.insert(0, str(janus_official_path))
+        try:
+            from models import VLChatProcessor
+            JANUS_AVAILABLE = True
+            logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").info("Janus库从本地模块导入成功")
+        except ImportError as e1:
+            # 如果直接导入失败，尝试从janus命名空间导入
+            try:
+                # 重新添加路径并尝试导入
+                sys.path.insert(0, str(janus_official_path))
+                from janus_official import janus
+                VLChatProcessor = janus.models.VLChatProcessor
+                JANUS_AVAILABLE = True
+                logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").info("Janus库从janus命名空间导入成功")
+            except ImportError as e2:
+                JANUS_AVAILABLE = False
+                logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").warning(f"本地Janus模块导入失败: {e1}, {e2}")
+    else:
+        JANUS_AVAILABLE = False
+        logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").warning(f"本地Janus模块路径不存在: {janus_official_path}")
+        
+except ImportError as e:
     JANUS_AVAILABLE = False
-    logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").warning("Janus库不可用，推理功能将被禁用")
+    logging.getLogger("plugins.janus_reverse_plugin.core.inference_engine").warning(f"Janus库导入失败: {e}")
 
 
 class InferenceEngine:

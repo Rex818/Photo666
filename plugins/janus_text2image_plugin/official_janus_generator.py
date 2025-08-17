@@ -10,14 +10,26 @@ import sys
 import logging
 
 # 添加本地Janus模块路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'janus_official'))
+current_dir = os.path.dirname(__file__)
+janus_official_path = os.path.join(current_dir, 'janus_official')
+sys.path.insert(0, janus_official_path)
 
 try:
-    from janus.models import MultiModalityCausalLM, VLChatProcessor
+    # 尝试从本地janus_official模块导入
+    from models import MultiModalityCausalLM, VLChatProcessor
+    print("成功从本地janus_official模块导入Janus")
 except ImportError as e:
-    logging.error(f"无法导入Janus模块: {e}")
-    logging.error("请确保Janus官方代码已复制到 janus_official 目录下")
-    raise
+    try:
+        # 如果失败，尝试从janus命名空间导入
+        from janus_official import janus
+        MultiModalityCausalLM = janus.models.MultiModalityCausalLM
+        VLChatProcessor = janus.models.VLChatProcessor
+        print("成功从janus命名空间导入Janus")
+    except ImportError as e2:
+        logging.error(f"无法导入Janus模块: {e}")
+        logging.error(f"备用导入也失败: {e2}")
+        logging.error("请确保Janus官方代码已正确集成到 janus_official 目录下")
+        raise
 
 class OfficialJanusGenerator:
     def __init__(self, model_path="deepseek-ai/Janus-1.3B", device="cuda"):
