@@ -17,61 +17,90 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-# check if python version is above 3.10
+# 简化版本：直接导出核心模块，避免复杂的导入检查
 import sys
+from pathlib import Path
 
-if sys.version_info >= (3, 10):
-    print("Python version is above 3.10, patching the collections module.")
-    # Monkey patch collections
-    import collections
-    import collections.abc
-
-    for type_name in collections.abc.__all__:
-        setattr(collections, type_name, getattr(collections.abc, type_name))
-    
-    # 特别处理Mapping类型
-    try:
-        from collections.abc import Mapping
-        collections.Mapping = Mapping
-    except ImportError:
-        pass
-
-# 导出Janus核心模块
+# 获取当前文件所在目录
 try:
-    from .models import VLMImageProcessor, VLChatProcessor, MultiModalityCausalLM
-    from .janusflow.models import SigLIPVisionTransformer, VQModel
+    current_dir = Path(__file__).parent
+except NameError:
+    # 如果__file__未定义，使用相对路径
+    current_dir = Path(".")
+
+# 将当前目录添加到sys.path（如果还没有的话）
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+# 尝试导入核心模块
+try:
+    # 直接导入models模块
+    import sys
+    import os
+    current_dir = Path(__file__).parent if '__file__' in globals() else Path(".")
     
+    # 确保models目录在路径中
+    if str(current_dir) not in sys.path:
+        sys.path.insert(0, str(current_dir))
+    
+    from models import VLChatProcessor, MultiModalityCausalLM, VLMImageProcessor
+    print("Janus核心模块导入成功")
+    
+    # 导出核心模块
     __all__ = [
+        "VLChatProcessor",
+        "MultiModalityCausalLM", 
         "VLMImageProcessor",
-        "VLChatProcessor", 
-        "MultiModalityCausalLM",
-        "SigLIPVisionTransformer",
-        "VQModel",
     ]
     
-    # 为了兼容性，也导出为janus命名空间
+    # 创建janus命名空间
     class JanusNamespace:
-        """Janus模块命名空间，提供兼容性导入"""
-        from .models import VLChatProcessor, MultiModalityCausalLM, VLMImageProcessor
-        from .janusflow.models import SigLIPVisionTransformer, VQModel
+        """Janus模块命名空间"""
+        def __init__(self):
+            self.VLChatProcessor = VLChatProcessor
+            self.MultiModalityCausalLM = MultiModalityCausalLM
+            self.VLMImageProcessor = VLMImageProcessor
         
-        models = type('models', (), {
-            'VLChatProcessor': VLChatProcessor,
-            'MultiModalityCausalLM': MultiModalityCausalLM,
-            'VLMImageProcessor': VLMImageProcessor,
-        })
-        
-        def __getattr__(self, name):
-            if name == 'models':
-                return self.models
-            raise AttributeError(f"module 'janus' has no attribute '{name}'")
+        @property
+        def models(self):
+            """返回models命名空间"""
+            return type('models', (), {
+                'VLChatProcessor': VLChatProcessor,
+                'MultiModalityCausalLM': MultiModalityCausalLM,
+                'VLMImageProcessor': VLMImageProcessor,
+            })
     
-    # 创建janus模块的别名
+    # 创建全局janus对象
     janus = JanusNamespace()
     
-    # 为了兼容性，也导出janus_official模块
+    # 为了兼容性，也导出janus_official
     janus_official = type('janus_official', (), {
         'janus': janus,
+        'models': janus.models,
+    })
+    
+except ImportError as e:
+    print(f"Janus模块导入失败: {e}")
+    print("这可能是由于PyTorch版本不兼容导致的")
+    
+    # 创建占位符类
+    class PlaceholderClass:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("Janus模块未正确加载，请检查PyTorch版本兼容性")
+    
+    # 导出占位符
+    VLChatProcessor = PlaceholderClass
+    MultiModalityCausalLM = PlaceholderClass
+    VLMImageProcessor = PlaceholderClass
+    
+    __all__ = [
+        "VLChatProcessor",
+        "MultiModalityCausalLM", 
+        "VLMImageProcessor",
+    ]
+    
+    # 创建占位符命名空间
+    janus = type('janus', (), {
         'models': type('models', (), {
             'VLChatProcessor': VLChatProcessor,
             'MultiModalityCausalLM': MultiModalityCausalLM,
@@ -79,6 +108,7 @@ try:
         })
     })
     
-except ImportError as e:
-    print(f"Warning: Some Janus modules could not be imported: {e}")
-    __all__ = []
+    janus_official = type('janus_official', (), {
+        'janus': janus,
+        'models': janus.models,
+    })

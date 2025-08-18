@@ -17,30 +17,42 @@ try:
     import sys
     import os
     plugin_dir = Path(os.path.dirname(os.path.dirname(__file__)))
-    janus_official_path = plugin_dir.parent / "janus_text2image_plugin" / "janus_official"
+    janus_pkg_dir = plugin_dir.parent / "janus_text2image_plugin"
     
-    if janus_official_path.exists():
-        # 将janus_official路径添加到sys.path
-        sys.path.insert(0, str(janus_official_path))
+    if janus_pkg_dir.exists():
+        # 将包父目录加入sys.path，以包名方式导入
+        if str(janus_pkg_dir) not in sys.path:
+            sys.path.insert(0, str(janus_pkg_dir))
+        
         try:
-            from models import VLChatProcessor
+            # 首选：以包名导入
+            from janus_official.models import VLChatProcessor
             JANUS_AVAILABLE = True
-            logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").info("Janus库从本地模块导入成功")
+            logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").info("Janus库从janus_official.models导入成功")
+                
         except ImportError as e1:
-            # 如果直接导入失败，尝试从janus命名空间导入
+            # 如果从janus_official导入失败，尝试直接导入models
             try:
-                # 重新添加路径并尝试导入
-                sys.path.insert(0, str(janus_official_path))
-                from janus_official import janus
-                VLChatProcessor = janus.models.VLChatProcessor
+                # 回退：直接在子包内导入
+                subdir = janus_pkg_dir / "janus_official"
+                if str(subdir) not in sys.path:
+                    sys.path.insert(0, str(subdir))
+                from models import VLChatProcessor
                 JANUS_AVAILABLE = True
-                logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").info("Janus库从janus命名空间导入成功")
+                logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").info("Janus库从models直接导入成功")
             except ImportError as e2:
-                JANUS_AVAILABLE = False
-                logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").warning(f"本地Janus模块导入失败: {e1}, {e2}")
+                # 如果直接导入也失败，尝试从janus命名空间导入
+                try:
+                    import janus_official
+                    VLChatProcessor = janus_official.janus.models.VLChatProcessor
+                    JANUS_AVAILABLE = True
+                    logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").info("Janus库从janus命名空间导入成功")
+                except ImportError as e3:
+                    JANUS_AVAILABLE = False
+                    logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").warning(f"所有Janus模块导入方式都失败: {e1}, {e2}, {e3}")
     else:
         JANUS_AVAILABLE = False
-        logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").warning(f"本地Janus模块路径不存在: {janus_official_path}")
+        logging.getLogger("plugins.janus_reverse_plugin.core.model_manager").warning(f"本地Janus包路径不存在: {janus_pkg_dir}")
         
 except ImportError as e:
     JANUS_AVAILABLE = False

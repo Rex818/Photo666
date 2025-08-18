@@ -25,8 +25,17 @@ from PIL.Image import Image
 from transformers import LlamaTokenizerFast
 from transformers.processing_utils import ProcessorMixin
 
-from janus.models.image_processing_vlm import VLMImageProcessor
-from janus.utils.conversation import get_conv_template
+from .image_processing_vlm import VLMImageProcessor
+try:
+    from ..utils.conversation import get_conv_template
+except ImportError:
+    # 如果相对导入失败，尝试绝对导入
+    import sys
+    import os
+    utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
+    if utils_path not in sys.path:
+        sys.path.insert(0, utils_path)
+    from conversation import get_conv_template
 
 
 class DictOutput(object):

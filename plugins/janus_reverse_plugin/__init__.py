@@ -7,5 +7,7 @@ __version__ = "1.0.0"
 __author__ = "Photo666 Team"
 __description__ = "基于Janus-Pro模型的AI图片反推和生成工具"
 
-# 注意：不要在此处导入插件主类，避免在插件发现阶段触发额外依赖导入
-__all__ = []
+# 导出插件主类
+from .plugin import JanusReversePlugin
+
+__all__ = ["JanusReversePlugin"]

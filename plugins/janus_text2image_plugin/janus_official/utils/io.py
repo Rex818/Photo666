@@ -26,7 +26,7 @@ import base64
 import io
 from transformers import AutoModelForCausalLM
 
-from janus.models import MultiModalityCausalLM, VLChatProcessor
+from ..models import MultiModalityCausalLM, VLChatProcessor
 
 
 def load_pretrained_model(model_path: str):

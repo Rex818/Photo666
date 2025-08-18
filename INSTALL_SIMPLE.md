@@ -1,73 +1,75 @@
-# Photo666 v0.3.0 简化安装指南
+# Photo666 v0.3.0 - Simple Installation Guide
 
-## 问题解决
-如果您遇到以下错误：
-```
-UnicodeDecodeError: 'gbk' codec can't decode byte 0xae in position 544: illegal multibyte sequence
-```
+## Quick Start (Windows)
 
-这是因为Windows系统的编码问题。我们已经修复了这个问题，现在可以直接使用。
+### Step 1: Extract and Navigate
+1. Extract `Photo666-v0.3.0.zip` to a folder
+2. Open PowerShell in that folder
+3. Run: `.\start.bat`
 
-## 快速安装步骤
+### Step 2: If start.bat fails, manual installation:
 
-### 1. 创建虚拟环境
-```cmd
+```powershell
+# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate
-```
 
-### 2. 安装依赖（推荐方法）
-```cmd
-# 方法1：直接安装（推荐）
+# Activate virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies (English version, no encoding issues)
 pip install -r requirements.txt
 
-# 方法2：如果上面失败，先升级pip
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 3. 启动程序
-```cmd
+# Run the program
 python main.py
 ```
 
-## 如果仍然遇到编码问题
+## Alternative Installation Methods
 
-### 临时解决方案
-如果requirements.txt仍然有问题，可以手动安装主要依赖：
+### Method 1: Install PyTorch separately (Recommended for GPU users)
+```powershell
+# First install PyTorch with CUDA support
+pip install torch==2.7.0+cu128 torchvision==0.22.0+cu128 torchaudio==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 
-```cmd
-# 核心依赖
-pip install PyQt6>=6.5.0
-pip install Pillow>=10.2.0
-pip install PyYAML>=6.0.0
-
-# AI依赖
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install transformers>=4.55.0
-pip install accelerate>=1.9.0
-pip install huggingface_hub>=0.16.0
-
-# 其他依赖
-pip install numpy>=1.24.0
-pip install requests>=2.28.0
-pip install geopy>=2.3.0
+# Then install other dependencies
+pip install PyQt6>=6.5.0 Pillow>=10.2.0 PyYAML>=6.0.0 sqlite-utils>=3.35.0 googletrans-py>=4.0.0 asyncio-mqtt>=0.11.0 aiofiles>=22.0.0 transformers>=4.55.0 huggingface_hub>=0.16.0 accelerate>=1.9.0 safetensors>=0.3.0 bitsandbytes>=0.41.0 numpy>=1.24.0 einops>=0.8.0 timm>=1.0.0 requests>=2.28.0 geopy>=2.3.0 tqdm>=4.60.0
 ```
 
-### 验证安装
-```cmd
-python -c "import torch; print('PyTorch version:', torch.__version__)"
-python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+### Method 2: Use conda (Alternative)
+```bash
+# Install PyTorch with CUDA
+conda install pytorch torchvision torchaudio pytorch-cuda=12.8 -c pytorch -c nvidia
+
+# Install other dependencies
+pip install PyQt6>=6.5.0 Pillow>=10.2.0 PyYAML>=6.0.0 sqlite-utils>=3.35.0 googletrans-py>=4.0.0 asyncio-mqtt>=0.11.0 aiofiles>=22.0.0 transformers>=4.55.0 huggingface_hub>=0.16.0 accelerate>=1.9.0 safetensors>=0.3.0 bitsandbytes>=0.41.0 numpy>=1.24.0 einops>=0.8.0 timm>=1.0.0 requests>=2.28.0 geopy>=2.3.0 tqdm>=4.60.0
 ```
 
-## 常见问题
+## Troubleshooting
 
-1. **编码错误**：已修复，使用新版本的requirements.txt
-2. **PyTorch安装失败**：使用官方命令安装CUDA版本
-3. **依赖冲突**：建议在干净的虚拟环境中安装
+### Encoding Error (UnicodeDecodeError)
+- **Problem**: `'gbk' codec can't decode byte 0xae`
+- **Solution**: Use the English `requirements.txt` file (already fixed)
+- **Alternative**: Use Method 1 or 2 above
 
-## 获取帮助
-如果仍有问题，请：
-1. 检查Python版本（需要3.10+）
-2. 确保虚拟环境已激活
-3. 查看完整安装指南：INSTALL.md
+### PyTorch Installation Issues
+- **Problem**: CUDA version not compatible
+- **Solution**: Use the official PyTorch command from Method 1
+- **Alternative**: Use conda installation from Method 2
+
+### Virtual Environment Issues
+- **Problem**: Cannot activate virtual environment
+- **Solution**: Run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` in PowerShell as Administrator
+
+## System Requirements
+
+- **OS**: Windows 10/11
+- **Python**: 3.8+
+- **RAM**: 8GB+ (16GB recommended)
+- **Storage**: 2GB+
+- **GPU**: NVIDIA with CUDA 12.8+ (optional, for AI acceleration)
+
+## Support
+
+If you encounter issues:
+1. Check the logs in `logs/picman.log`
+2. Refer to `INSTALL.md` for detailed instructions
+3. Check `RELEASE_README.md` for version information

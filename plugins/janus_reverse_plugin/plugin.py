@@ -157,12 +157,95 @@ class JanusReversePlugin(Plugin):
                 QMessageBox.warning(parent, "插件未初始化", "Janus插件尚未初始化，请检查配置")
                 return
             
+            # 运行时检查Janus库是否可用
+            if not self._check_janus_available():
+                self._show_janus_unavailable_message(parent)
+                return
+            
             # 显示配置对话框（包含图片选择功能）
             self.show_config_dialog(parent)
             
         except Exception as e:
             self.logger.error(f"显示Janus配置对话框失败: {str(e)}")
             QMessageBox.critical(parent, "错误", f"显示Janus配置对话框失败：{str(e)}")
+    
+    def _check_janus_available(self) -> bool:
+        """检查Janus库是否可用"""
+        try:
+            # 检查推理引擎是否存在
+            if not hasattr(self, 'inference_engine') or self.inference_engine is None:
+                self.logger.warning("推理引擎未初始化")
+                return False
+            
+            # 检查JANUS_AVAILABLE属性
+            if not hasattr(self.inference_engine, "JANUS_AVAILABLE"):
+                self.logger.warning("推理引擎缺少JANUS_AVAILABLE属性")
+                return False
+            
+            # 检查值是否为True
+            if not self.inference_engine.JANUS_AVAILABLE:
+                self.logger.warning("推理引擎JANUS_AVAILABLE为False")
+                return False
+            
+            self.logger.info("Janus库可用性检查通过")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"检查Janus库可用性时出错: {e}")
+            return False
+    
+    def _show_janus_unavailable_message(self, parent=None):
+        """显示Janus库不可用的消息"""
+        try:
+            # 尝试获取已选择的图片路径
+            image_paths = self._get_selected_images()
+            
+            if image_paths:
+                # 如果有选择的图片，显示详细信息
+                QMessageBox.information(parent, "Janus反推", 
+                    f"Janus库暂不可用，但插件已准备就绪。\n\n"
+                    f"已选择 {len(image_paths)} 张图片：\n"
+                    f"• {Path(image_paths[0]).name}" + 
+                    (f"\n• ... 等 {len(image_paths)} 张图片" if len(image_paths) > 1 else "") +
+                    f"\n\n实际推理功能需要安装Janus库。\n"
+                    f"占位功能将显示反推对话框，但不会进行实际推理。")
+            else:
+                # 如果没有选择图片，显示简单消息
+                QMessageBox.information(parent, "Janus反推", 
+                    "Janus库暂不可用，但插件已准备就绪。\n\n"
+                    "实际推理功能需要安装Janus库。\n"
+                    "占位功能将显示反推对话框，但不会进行实际推理。")
+                    
+        except Exception as e:
+            self.logger.error(f"显示Janus库不可用消息时出错: {e}")
+            QMessageBox.warning(parent, "Janus反推", "Janus库暂不可用")
+    
+    def _get_selected_images(self) -> List[str]:
+        """获取已选择的图片路径"""
+        try:
+            # 这里应该从主程序获取当前选择的图片
+            # 暂时返回空列表，实际实现时需要与主程序集成
+            return []
+        except Exception as e:
+            self.logger.error(f"获取已选择图片时出错: {e}")
+            return []
+    
+    def _show_janus_unavailable_message_with_images(self, image_paths: List[str]):
+        """显示Janus库不可用的消息（带图片信息）"""
+        try:
+            if image_paths:
+                QMessageBox.information(None, "Janus反推", 
+                    f"Janus库暂不可用，但插件已准备就绪。\n\n"
+                    f"已选择 {len(image_paths)} 张图片：\n"
+                    f"• {Path(image_paths[0]).name}" + 
+                    (f"\n• ... 等 {len(image_paths)} 张图片" if len(image_paths) > 1 else "") +
+                    f"\n\n实际推理功能需要安装Janus库。\n"
+                    f"占位功能将显示反推对话框，但不会进行实际推理。")
+            else:
+                self._show_janus_unavailable_message(None)
+        except Exception as e:
+            self.logger.error(f"显示Janus库不可用消息（带图片）时出错: {e}")
+            QMessageBox.warning(None, "Janus反推", "Janus库暂不可用")
     
     def show_config_dialog(self, parent=None):
         """显示配置对话框"""
@@ -211,16 +294,9 @@ class JanusReversePlugin(Plugin):
                 QMessageBox.warning(None, "错误", "没有选择图片")
                 return
             
-            # 检查Janus库是否可用
-            if not hasattr(self.inference_engine, "JANUS_AVAILABLE") or not self.inference_engine.JANUS_AVAILABLE:
-                # Janus库不可用，显示占位功能
-                QMessageBox.information(None, "Janus反推", 
-                    f"Janus库暂不可用，但插件已准备就绪。\n\n"
-                    f"已选择 {len(image_paths)} 张图片：\n"
-                    f"• {Path(image_paths[0]).name}" + 
-                    (f"\n• ... 等 {len(image_paths)} 张图片" if len(image_paths) > 1 else "") +
-                    f"\n\n实际推理功能需要安装Janus库。\n"
-                    f"占位功能将显示反推对话框，但不会进行实际推理。")
+            # 运行时检查Janus库是否可用
+            if not self._check_janus_available():
+                self._show_janus_unavailable_message_with_images(image_paths)
                 return
             
             # 记录Janus库状态

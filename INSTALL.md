@@ -16,6 +16,7 @@
 - **内存**: 最低 8GB，推荐 16GB+
 - **存储**: 最低 5GB 可用空间
 - **GPU**: 可选，支持CUDA 12.8的NVIDIA GPU（用于AI功能加速）
+- **GPU**: 如果做图片反推，建议至少16G显存的显卡，推荐安装CUDA 12.8的NVIDIA GPU
 
 ## 安装步骤
 
@@ -73,10 +74,11 @@ pip install -r requirements.txt
 #### GPU支持安装（推荐）
 如果使用NVIDIA GPU，建议安装CUDA版本：
 ```bash
-# 安装CUDA版本的PyTorch
+# 这是通用安装CUDA版本的PyTorch
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-#作者建议安装的版本如下，需要系统本地安装CUDA 12.8支持。 实测CUDA可以在系统内安装多个版本，不需要卸载原版本。
+#推荐安装的版本如下，需要先在操作系统内安装CUDA 12.8。
+#实测CUDA可以在系统内安装多个版本，不需要卸载原版本。
 pip install torch==2.7.0+cu128 torchvision==0.22.0+cu128 torchaudio==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 
 

@@ -9,27 +9,36 @@ from transformers import AutoModelForCausalLM
 import sys
 import logging
 
-# 添加本地Janus模块路径
+# 添加本地Janus模块路径（应当将父目录加入到sys.path，才能以包名导入）
 current_dir = os.path.dirname(__file__)
-janus_official_path = os.path.join(current_dir, 'janus_official')
-sys.path.insert(0, janus_official_path)
+jt2i_dir = os.path.join(current_dir)  # plugins/janus_text2image_plugin
+if jt2i_dir not in sys.path:
+    sys.path.insert(0, jt2i_dir)
 
 try:
-    # 尝试从本地janus_official模块导入
-    from models import MultiModalityCausalLM, VLChatProcessor
-    print("成功从本地janus_official模块导入Janus")
+    # 首选：以包名导入
+    from janus_official.models import MultiModalityCausalLM, VLChatProcessor
+    print("成功从janus_official.models导入Janus")
 except ImportError as e:
     try:
-        # 如果失败，尝试从janus命名空间导入
-        from janus_official import janus
-        MultiModalityCausalLM = janus.models.MultiModalityCausalLM
-        VLChatProcessor = janus.models.VLChatProcessor
-        print("成功从janus命名空间导入Janus")
-    except ImportError as e2:
-        logging.error(f"无法导入Janus模块: {e}")
-        logging.error(f"备用导入也失败: {e2}")
-        logging.error("请确保Janus官方代码已正确集成到 janus_official 目录下")
-        raise
+        # 备用：通过命名空间对象
+        import janus_official
+        MultiModalityCausalLM = janus_official.janus.models.MultiModalityCausalLM
+        VLChatProcessor = janus_official.janus.models.VLChatProcessor
+        print("成功从janus_official.janus.models导入Janus")
+    except Exception as e2:
+        try:
+            # 最后回退：直接在子包内导入
+            janus_official_path = os.path.join(current_dir, 'janus_official')
+            if janus_official_path not in sys.path:
+                sys.path.insert(0, janus_official_path)
+            from models import MultiModalityCausalLM, VLChatProcessor
+            print("成功从本地models导入Janus")
+        except Exception as e3:
+            logging.error(f"无法导入Janus模块: {e}")
+            logging.error(f"备用导入也失败: {e2}, {e3}")
+            logging.error("请确保Janus官方代码已正确集成到 plugins/janus_text2image_plugin/janus_official 目录下")
+            raise
 
 class OfficialJanusGenerator:
     def __init__(self, model_path="deepseek-ai/Janus-1.3B", device="cuda"):

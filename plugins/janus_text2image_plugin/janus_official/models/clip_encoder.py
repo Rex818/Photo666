@@ -24,7 +24,7 @@ import torch.nn as nn
 import torchvision.transforms
 from einops import rearrange
 
-from janus.models.siglip_vit import create_siglip_vit
+from .siglip_vit import create_siglip_vit
 
 
 class CLIPVisionTower(nn.Module):

@@ -26,29 +26,26 @@ aiofiles>=22.0.0
 # AI Model Dependencies
 # ========================================
 
-# PyTorch (CUDA 12.8 compatible, supports GPU inference)
+# PyTorch (CUDA 12.8 compatible versions for GPU inference)
 # Note: These versions are optimized for CUDA 12.8 to ensure GPU acceleration
-# Versions adjusted based on actual virtual environment configuration
 torch>=2.7.0+cu128
 torchvision>=0.22.0+cu128
 torchaudio>=2.7.0+cu128
 
 # Alternative installation methods if the above versions fail:
-# Method 1: Install from PyTorch official (recommended)
+# Method 1: Install from PyTorch official (Recommended)
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Method 2: Install using conda
 # conda install pytorch torchvision torchaudio pytorch-cuda=12.8 -c pytorch -c nvidia
 
 # Transformers (AI model framework)
-# Version adjusted based on actual virtual environment configuration
 transformers>=4.55.0
 
 # Hugging Face Hub
 huggingface_hub>=0.16.0
 
 # Accelerate (model acceleration)
-# Version adjusted based on actual virtual environment configuration
 accelerate>=1.9.0
 
 # Safetensors (model file format)
@@ -80,7 +77,7 @@ requests>=2.28.0
 # Geographic calculations
 geopy>=2.3.0
 
-# Progress bar
+# Progress bars
 tqdm>=4.60.0
 
 # ========================================
@@ -89,26 +86,26 @@ tqdm>=4.60.0
 # The following dependencies cover all plugin requirements:
 # - florence2_reverse_plugin: transformers, torch, torchvision, accelerate, safetensors, pillow, numpy, einops, timm
 # - joycaption_reverse_plugin: torch, transformers, huggingface_hub, pillow, requests, bitsandbytes, accelerate, safetensors
-# - janus_reverse_plugin: torch, transformers, pillow, numpy, requests, tqdm (Janus code integrated)
-# - janus_text2image_plugin: pillow (Janus code integrated)
+# - janus_reverse_plugin: torch, transformers, pillow, numpy, requests, tqdm
+# - janus_text2image_plugin: pillow
 # - gps_location_plugin: requests, geopy
 
 # ========================================
 # Special Dependencies
 # ========================================
 
-# Janus AI model code is integrated in janus_text2image_plugin
-# No need to download from GitHub repeatedly
+# Janus AI model code is already integrated in janus_text2image_plugin
+# No need to install from GitHub
 
 # ========================================
 # Important Notes
 # ========================================
 # 1. First installation may take a long time due to AI model downloads
-# 2. Recommended to install in virtual environment
-# 3. If network issues occur, use domestic mirror sources
+# 2. Recommended to install in a virtual environment
+# 3. Use domestic mirror sources if network issues occur
 # 4. CUDA version requirement: CUDA 12.8 or compatible version
-# 5. GPU support: Ensure PyTorch CUDA version is installed for GPU acceleration
+# 5. GPU support: Ensure CUDA version of PyTorch is installed for GPU acceleration
 # 6. If pip installation of CUDA version fails, use PyTorch official command:
 #    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-# 7. Janus-related functions are integrated in plugins, no additional installation needed
+# 7. Janus related functionality is integrated in plugins, no additional installation needed
 # 8. Verify GPU support: python -c "import torch; print('CUDA available:', torch.cuda.is_available())"

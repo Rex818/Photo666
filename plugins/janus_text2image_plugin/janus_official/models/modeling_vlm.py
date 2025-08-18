@@ -43,8 +43,8 @@ from transformers import (
 )
 from transformers.configuration_utils import PretrainedConfig
 
-from janus.models.clip_encoder import CLIPVisionTower
-from janus.models.projector import MlpProjector
+from .clip_encoder import CLIPVisionTower
+from .projector import MlpProjector
 
 
 class vision_head(torch.nn.Module):
@@ -73,7 +73,7 @@ def model_name_to_cls(cls_name):
         cls = CLIPVisionTower
 
     elif "VQ" in cls_name:
-        from janus.models.vq_model import VQ_models
+        from .vq_model import VQ_models
 
         cls = VQ_models[cls_name]
     elif "vision_head" in cls_name:

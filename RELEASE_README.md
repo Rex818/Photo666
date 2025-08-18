@@ -65,7 +65,8 @@
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-#本人实测，建议安装版本如下，需要在本地安装cuda 12.8版本
+#推荐安装的版本如下，需要先在操作系统内安装CUDA 12.8。
+#实测CUDA可以在系统内安装多个版本，不需要卸载原版本。
 pip install torch==2.7.0+cu128 torchvision==0.22.0+cu128 torchaudio==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 ```
 
