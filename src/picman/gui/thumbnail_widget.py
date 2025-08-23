@@ -658,8 +658,25 @@ class ThumbnailWidget(QScrollArea):
     
     def toggle_favorite(self, photo_id: int):
         """Toggle favorite status for a photo."""
-        # This would typically update the database
-        self.logger.info("Toggling favorite: photo_id=%d", photo_id)
+        try:
+            # 获取主窗口的photo_manager
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'photo_manager'):
+                # 使用photo_manager更新数据库
+                success = main_window.photo_manager.toggle_favorite(photo_id)
+                if success:
+                    self.logger.info("收藏状态切换成功: photo_id=%d", photo_id)
+                    # 发送照片更新信号
+                    self.photos_updated.emit()
+                    # 刷新显示
+                    self.refresh_display()
+                else:
+                    self.logger.error("收藏状态切换失败: photo_id=%d", photo_id)
+            else:
+                self.logger.error("Photo manager not available")
+                
+        except Exception as e:
+            self.logger.error("切换收藏状态失败: photo_id=%d, error=%s", photo_id, str(e))
     
     def add_to_album(self, photo_id: int):
         """Add photo to album."""

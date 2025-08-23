@@ -656,6 +656,7 @@ class DatabaseManager:
                      camera_filter: str = "",
                      date_from: str = "",
                      date_to: str = "",
+                     album_ids: List[int] = None,
                      limit: int = 100,
                      offset: int = 0) -> List[Dict[str, Any]]:
         """Enhanced search photos with various filters."""
@@ -663,7 +664,7 @@ class DatabaseManager:
             db = sqlite_utils.Database(self.db_path)
             
             # 记录搜索参数用于调试
-            self.logger.info(f"Search parameters: query='{query}', search_terms={search_terms}, tags={tags}, rating_min={rating_min}, favorites_only={favorites_only}, min_width={min_width}, min_height={min_height}, min_size_kb={min_size_kb}, camera_filter='{camera_filter}', date_from='{date_from}', date_to='{date_to}'")
+            self.logger.info(f"Search parameters: query='{query}', search_terms={search_terms}, tags={tags}, rating_min={rating_min}, favorites_only={favorites_only}, min_width={min_width}, min_height={min_height}, min_size_kb={min_size_kb}, camera_filter='{camera_filter}', date_from='{date_from}', date_to='{date_to}', album_ids={album_ids}")
             
             sql_conditions = []
             params = []
@@ -752,6 +753,19 @@ class DatabaseManager:
             if date_to:
                 sql_conditions.append("date_taken <= ?")
                 params.append(date_to)
+            
+            # 相册筛选
+            if album_ids:
+                # 构建相册筛选的SQL条件
+                album_placeholders = ",".join(["?" for _ in album_ids])
+                sql_conditions.append(f"""
+                    id IN (
+                        SELECT DISTINCT photo_id 
+                        FROM album_photos 
+                        WHERE album_id IN ({album_placeholders})
+                    )
+                """)
+                params.extend(album_ids)
             
             # 构建SQL查询 - 使用更灵活的OR逻辑
             sql = "SELECT * FROM photos"

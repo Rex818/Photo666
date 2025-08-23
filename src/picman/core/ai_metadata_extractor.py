@@ -200,12 +200,75 @@ class AIMetadataExtractor:
             if seed_match and metadata.seed == 0:
                 metadata.seed = int(seed_match.group(1))
             
-            # 检查文件名中的尺寸信息
-            size_match = re.search(r'(\d+)x(\d+)', filename)
+            # 改进AI软件识别逻辑 - 只在没有软件标识时进行文件名识别
+            if not metadata.generation_software:
+                filename_lower = filename.lower()
+                
+                # ComfyUI识别 - 改进识别逻辑
+                if 'comfyui' in filename_lower or filename.startswith('ComfyUI_'):
+                    metadata.generation_software = 'ComfyUI'
+                    metadata.is_ai_generated = True
+                    # 从文件名提取更多信息
+                    if 'comfyui_' in filename_lower or filename.startswith('ComfyUI_'):
+                        # 提取模型信息
+                        model_match = re.search(r'[Cc]omfyui_(\w+)', filename)
+                        if model_match:
+                            metadata.model_name = f"ComfyUI_{model_match.group(1)}"
+                        else:
+                            # 如果没有特定模型名，使用文件名作为模型名
+                            metadata.model_name = filename.replace('.png', '').replace('.jpg', '')
+                
+                # Stable Diffusion识别
+                elif any(keyword in filename_lower for keyword in ['stable', 'diffusion', 'sd_', 'sd-']):
+                    metadata.generation_software = 'Stable Diffusion'
+                    metadata.is_ai_generated = True
+                
+                # Midjourney识别
+                elif 'midjourney' in filename_lower or 'mj_' in filename_lower:
+                    metadata.generation_software = 'Midjourney'
+                    metadata.is_ai_generated = True
+                
+                # DALL-E识别
+                elif 'dall' in filename_lower or 'dalle' in filename_lower:
+                    metadata.generation_software = 'DALL-E'
+                    metadata.is_ai_generated = True
+                
+                # 通用AI图片识别模式
+                elif any(pattern in filename_lower for pattern in [
+                    'ai_', 'generated_', 'synthetic_', 'artificial_',
+                    'prompt_', 'seed_', 'steps_', 'cfg_'
+                ]):
+                    metadata.is_ai_generated = True
+                    metadata.generation_software = 'AI Generated'
+                
+                # 如果文件名包含种子号且没有其他软件标识，可能是AI生成的
+                elif seed_match and len(seed_match.group(1)) >= 10:
+                    # 长种子号通常是AI生成的
+                    metadata.is_ai_generated = True
+                    metadata.generation_software = 'AI Generated (Seed Detected)'
+            
+            # 检查文件名中的其他参数
+            # 步数
+            steps_match = re.search(r'steps?[_-]?(\d+)', filename.lower())
+            if steps_match and metadata.steps == 0:
+                metadata.steps = int(steps_match.group(1))
+            
+            # CFG比例
+            cfg_match = re.search(r'cfg[_-]?(\d+\.?\d*)', filename.lower())
+            if cfg_match and metadata.cfg_scale == 0.0:
+                metadata.cfg_scale = float(cfg_match.group(1))
+            
+            # 采样器
+            sampler_match = re.search(r'(euler|dpm|ddim|plms|uni_pc|heun|dpm_fast|dpm_adaptive|lms|dpm_solver)', filename.lower())
+            if sampler_match and not metadata.sampler:
+                metadata.sampler = sampler_match.group(1).upper()
+            
+            # 尺寸信息
+            size_match = re.search(r'(\d+)x(\d+)', filename.lower())
             if size_match and not metadata.size:
-                width, height = size_match.groups()
+                width, height = int(size_match.group(1)), int(size_match.group(2))
                 metadata.size = f"{width}x{height}"
-        
+            
         except Exception as e:
             self.logger.error(f"Failed to extract filename metadata: {str(e)}")
         

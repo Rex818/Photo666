@@ -68,11 +68,16 @@ class PhotoManager:
                     self.logger.info("Photo file moved, updating path: old_path=%s, new_path=%s, photo_id=%s", 
                                    stored_filepath, current_filepath, existing_photo["id"])
                     
-                    # 更新文件路径和文件大小
+                    # 重新提取AI元数据，确保AI信息是最新的
+                    ai_metadata = self.ai_extractor.extract_metadata(str(file_path))
+                    
+                    # 更新文件路径、文件大小和AI元数据
                     update_data = {
                         "filepath": current_filepath,
                         "file_size": file_path.stat().st_size,
-                        "date_modified": datetime.now().isoformat()
+                        "date_modified": datetime.now().isoformat(),
+                        "ai_metadata": ai_metadata.to_dict(),
+                        "is_ai_generated": ai_metadata.is_ai_generated
                     }
                     
                     # 如果缩略图不存在，重新生成
@@ -85,9 +90,9 @@ class PhotoManager:
                     
                     # 更新数据库
                     if self.db.update_photo(existing_photo["id"], update_data):
-                        self.logger.info("Successfully updated photo path: photo_id=%s", existing_photo["id"])
+                        self.logger.info("Successfully updated photo path and AI metadata: photo_id=%s", existing_photo["id"])
                     else:
-                        self.logger.error("Failed to update photo path: photo_id=%s", existing_photo["id"])
+                        self.logger.error("Failed to update photo path and AI metadata: photo_id=%s", existing_photo["id"])
                 else:
                     self.logger.info("Photo already exists at same location: path=%s", str(file_path))
                 
@@ -482,37 +487,43 @@ class PhotoManager:
         
         return self.db.update_photo(photo_id, {"tags": list(current_tags)})
     
-    def search_photos(self, **kwargs) -> List[Dict[str, Any]]:
-        """Search photos with various filters.
-        
-        Args:
-            **kwargs: Various search parameters including:
-                - query: Text search
-                - tags: List of tags
-                - rating_min: Minimum rating
-                - favorites_only: Only favorites
-                - directory_path: Photos from specific directory
-                - limit: Maximum number of results
-                - offset: Results offset
-        
-        Returns:
-            List of matching photos
-        """
-        # Special handling for directory_path
-        directory_path = kwargs.pop("directory_path", None)
-        if directory_path:
-            # Convert to consistent format for comparison
-            directory_path = str(Path(directory_path))
-            
-            # Get all photos
-            all_photos = self.db.search_photos(**kwargs)
-            
-            # Filter by directory
-            return [photo for photo in all_photos 
-                   if photo["filepath"].startswith(directory_path)]
-        else:
-            # Standard search
-            return self.db.search_photos(**kwargs)
+    def search_photos(self, 
+                     query: str = "",
+                     search_terms: List[str] = None,
+                     tags: List[str] = None,
+                     rating_min: int = 0,
+                     favorites_only: bool = False,
+                     min_width: int = 0,
+                     min_height: int = 0,
+                     min_size_kb: int = 0,
+                     camera_filter: str = "",
+                     date_from: str = "",
+                     date_to: str = "",
+                     album_ids: List[int] = None,
+                     limit: int = 100,
+                     offset: int = 0) -> List[Dict[str, Any]]:
+        """Search photos with various filters including album filtering."""
+        try:
+            self.logger.info(f"Searching photos with album_ids: {album_ids}")
+            return self.db.search_photos(
+                query=query,
+                search_terms=search_terms,
+                tags=tags,
+                rating_min=rating_min,
+                favorites_only=favorites_only,
+                min_width=min_width,
+                min_height=min_height,
+                min_size_kb=min_size_kb,
+                camera_filter=camera_filter,
+                date_from=date_from,
+                date_to=date_to,
+                album_ids=album_ids,
+                limit=limit,
+                offset=offset
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to search photos: {str(e)}")
+            return []
     
     def delete_photo(self, photo_id: int, delete_file: bool = False) -> bool:
         """Delete photo from database and optionally from disk."""

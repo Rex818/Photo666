@@ -647,12 +647,13 @@ class PhotoTagsPanel(QWidget):
         # 1区 - 标签信息区域（占主要空间）
         tags_info_widget = QWidget()
         tags_info_layout = QVBoxLayout(tags_info_widget)
-        tags_info_layout.setSpacing(15)  # 从10增加到15，增加标签组之间的间距
+        tags_info_layout.setSpacing(20)  # 增加标签组之间的间距，避免重叠
         tags_info_layout.setContentsMargins(5, 5, 5, 5)  # 设置内容边距
         
         # 简单标签区域
         simple_tags_group = QGroupBox("简单标签")
         simple_tags_layout = QVBoxLayout(simple_tags_group)
+        simple_tags_layout.setSpacing(10)  # 设置标签组内间距
         
         # 英文简单标签
         simple_en_layout = QVBoxLayout()
@@ -660,8 +661,14 @@ class PhotoTagsPanel(QWidget):
         self.simple_en_edit = QTextEdit()
         self.simple_en_edit.setPlaceholderText("输入英文标签...")
         self.simple_en_edit.setReadOnly(True)  # 初始状态为只读
-        self.simple_en_edit.setMaximumHeight(100)  # 从80增加到100
-        self.simple_en_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.simple_en_edit.setMinimumHeight(80)
+        self.simple_en_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.simple_en_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.simple_en_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.simple_en_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         simple_en_layout.addWidget(self.simple_en_edit)
         simple_tags_layout.addLayout(simple_en_layout)
         
@@ -671,8 +678,14 @@ class PhotoTagsPanel(QWidget):
         self.simple_cn_edit = QTextEdit()
         self.simple_cn_edit.setPlaceholderText("输入中文标签...")
         self.simple_cn_edit.setReadOnly(True)  # 初始状态为只读
-        self.simple_cn_edit.setMaximumHeight(100)  # 从80增加到100
-        self.simple_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.simple_cn_edit.setMinimumHeight(80)
+        self.simple_cn_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.simple_cn_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.simple_cn_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.simple_cn_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         simple_cn_layout.addWidget(self.simple_cn_edit)
         simple_tags_layout.addLayout(simple_cn_layout)
         
@@ -681,6 +694,7 @@ class PhotoTagsPanel(QWidget):
         # 普通标签区域
         general_tags_group = QGroupBox("普通标签")
         general_tags_layout = QVBoxLayout(general_tags_group)
+        general_tags_layout.setSpacing(10)  # 设置标签组内间距
         
         # 英文普通标签
         general_en_layout = QVBoxLayout()
@@ -688,8 +702,14 @@ class PhotoTagsPanel(QWidget):
         self.general_en_edit = QTextEdit()
         self.general_en_edit.setPlaceholderText("输入英文标签...")
         self.general_en_edit.setReadOnly(True)  # 初始状态为只读
-        self.general_en_edit.setMaximumHeight(100)  # 从80增加到100
-        self.general_en_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.general_en_edit.setMinimumHeight(80)
+        self.general_en_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.general_en_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.general_en_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.general_en_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         general_en_layout.addWidget(self.general_en_edit)
         general_tags_layout.addLayout(general_en_layout)
         
@@ -699,8 +719,14 @@ class PhotoTagsPanel(QWidget):
         self.general_cn_edit = QTextEdit()
         self.general_cn_edit.setPlaceholderText("输入中文标签...")
         self.general_cn_edit.setReadOnly(True)  # 初始状态为只读
-        self.general_cn_edit.setMaximumHeight(100)  # 从80增加到100
-        self.general_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.general_cn_edit.setMinimumHeight(80)
+        self.general_cn_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.general_cn_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.general_cn_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.general_cn_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         general_cn_layout.addWidget(self.general_cn_edit)
         general_tags_layout.addLayout(general_cn_layout)
         
@@ -709,6 +735,7 @@ class PhotoTagsPanel(QWidget):
         # 详细标签区域
         detailed_tags_group = QGroupBox("详细标签")
         detailed_tags_layout = QVBoxLayout(detailed_tags_group)
+        detailed_tags_layout.setSpacing(10)  # 设置标签组内间距
         
         # 英文详细标签
         detailed_en_layout = QVBoxLayout()
@@ -716,8 +743,14 @@ class PhotoTagsPanel(QWidget):
         self.detailed_en_edit = QTextEdit()
         self.detailed_en_edit.setPlaceholderText("输入英文标签...")
         self.detailed_en_edit.setReadOnly(True)  # 初始状态为只读
-        self.detailed_en_edit.setMaximumHeight(100)  # 从80增加到100
-        self.detailed_en_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.detailed_en_edit.setMinimumHeight(80)
+        self.detailed_en_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.detailed_en_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.detailed_en_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.detailed_en_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         detailed_en_layout.addWidget(self.detailed_en_edit)
         detailed_tags_layout.addLayout(detailed_en_layout)
         
@@ -727,8 +760,14 @@ class PhotoTagsPanel(QWidget):
         self.detailed_cn_edit = QTextEdit()
         self.detailed_cn_edit.setPlaceholderText("输入中文标签...")
         self.detailed_cn_edit.setReadOnly(True)  # 初始状态为只读
-        self.detailed_cn_edit.setMaximumHeight(100)  # 从80增加到100
-        self.detailed_cn_edit.setMinimumHeight(80)   # 从60增加到80
+        # 设置合适的高度，确保内容不会重叠
+        self.detailed_cn_edit.setMinimumHeight(80)
+        self.detailed_cn_edit.setMaximumHeight(150)  # 增加最大高度
+        # 启用滚动条，确保长文本可以正常显示
+        self.detailed_cn_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.detailed_cn_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.detailed_cn_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         detailed_cn_edit_layout.addWidget(self.detailed_cn_edit)
         detailed_tags_layout.addLayout(detailed_cn_edit_layout)
         
@@ -749,6 +788,11 @@ class PhotoTagsPanel(QWidget):
         self.notes_edit.setReadOnly(True)  # 初始状态为只读
         self.notes_edit.setMaximumHeight(120)  # 从100增加到120
         self.notes_edit.setMinimumHeight(100)   # 从80增加到100
+        # 启用滚动条，确保长文本可以正常显示
+        self.notes_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.notes_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # 设置自动换行
+        self.notes_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         notes_group_layout.addWidget(self.notes_edit)
         
         notes_layout.addWidget(notes_group)
@@ -761,7 +805,7 @@ class PhotoTagsPanel(QWidget):
         splitter.setSizes([700, 300])
         
         # 设置分割器的最小高度，确保内容不被压缩
-        splitter.setMinimumHeight(500)
+        splitter.setMinimumHeight(600)  # 增加最小高度，确保有足够空间显示所有标签
         
         layout.addWidget(splitter)
         

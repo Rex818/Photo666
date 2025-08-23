@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QMenuBar, QMenu, QToolBar, QStatusBar, QSplitter, QFileDialog,
     QMessageBox, QProgressDialog, QLabel, QLineEdit, QPushButton,
     QComboBox, QSpinBox, QCheckBox, QTabWidget, QDockWidget, QFrame,
-    QDialog, QGroupBox, QDateEdit
+    QDialog, QGroupBox, QDateEdit, QStackedWidget
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QDate, QByteArray
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
@@ -33,7 +33,7 @@ from .janus_generate_page import JanusGeneratePage
 
 from .thumbnail_widget import ThumbnailWidget
 from .album_manager import AlbumManager
-from .tag_manager import TagManager
+
 from .settings_dialog import SettingsDialog
 from .batch_processor import BatchProcessorDialog
 from .language_dialog import LanguageDialog
@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_widget = None
         self.photo_viewer = None
         self.album_manager = None
-        self.tag_manager = None
+
         self.status_label = None
         self.search_box = None
         
@@ -315,7 +315,6 @@ class MainWindow(QMainWindow):
         
         # Create central area for photo display with thumbnail widget
         self.thumbnail_widget = ThumbnailWidget()
-        self.thumbnail_widget.photo_selected.connect(self.on_photo_selected)
         self.main_splitter.addWidget(self.thumbnail_widget)
         
         # Set splitter proportions
@@ -323,6 +322,27 @@ class MainWindow(QMainWindow):
         
         # Create dock widgets
         self.create_dock_widgets()
+        
+        # 在create_dock_widgets之后创建AI信息页和标签信息页，因为此时album_manager已经创建
+        print("=== DEBUG: 在create_dock_widgets之后创建AI信息页和标签信息页 ===")
+        
+        # 创建AI信息页
+        from .tag_manager import AIImageInfoPanel
+        print("=== DEBUG: creating AIImageInfoPanel after create_dock_widgets ===")
+        self.ai_info_page = AIImageInfoPanel(self.db_manager, self.album_manager)
+        print("=== DEBUG: AIImageInfoPanel created after create_dock_widgets ===")
+        
+        # 创建标签信息页
+        from .tag_manager import PhotoTagsPanel
+        print("=== DEBUG: creating PhotoTagsPanel after create_dock_widgets ===")
+        self.tag_info_page = PhotoTagsPanel(self.db_manager, self.album_manager)
+        print("=== DEBUG: PhotoTagsPanel created after create_dock_widgets ===")
+        
+        # 将AI信息页和标签信息页添加到photo_area_stack中
+        print("=== DEBUG: adding AI info page and tag info page to photo_area_stack ===")
+        self.photo_area_stack.addWidget(self.ai_info_page)
+        self.photo_area_stack.addWidget(self.tag_info_page)
+        print("=== DEBUG: AI info page and tag info page added to photo_area_stack ===")
         
         # Create menu bar
         self.create_menu_bar()
@@ -338,9 +358,6 @@ class MainWindow(QMainWindow):
         
         # 加载保存的搜索条件
         self.load_saved_search_condition()
-        
-        # 尝试恢复保存的布局（在所有UI组件初始化完成后）
-        self.restore_layout()
     
 
     
@@ -505,6 +522,25 @@ class MainWindow(QMainWindow):
         row3_layout.addStretch()
         advanced_layout.addLayout(row3_layout)
         
+        # 第四行：相册搜索选项
+        row4_layout = QHBoxLayout()
+        
+        # 指定相册搜索
+        self.album_search_enabled = QCheckBox("指定相册搜索")
+        self.album_search_enabled.setChecked(False)
+        self.album_search_enabled.setToolTip("勾选后，搜索只在当前选定的相册范围内进行")
+        self.album_search_enabled.stateChanged.connect(self.on_album_search_enabled_changed)
+        row4_layout.addWidget(self.album_search_enabled)
+        
+        # 相册搜索状态显示
+        self.album_search_status = QLabel("未选择相册")
+        self.album_search_status.setStyleSheet("color: #666; font-size: 11px;")
+        self.album_search_status.setMaximumWidth(200)
+        row4_layout.addWidget(self.album_search_status)
+        
+        row4_layout.addStretch()
+        advanced_layout.addLayout(row4_layout)
+        
         layout.addWidget(advanced_group)
         
         # 操作按钮
@@ -544,22 +580,33 @@ class MainWindow(QMainWindow):
         return widget
     
     def create_photo_display_dock_widget(self) -> QWidget:
-        """Create the photo display dock widget with stacked pages.
-
-        - 图片显示页（保持原有 PhotoViewer 功能不变）
-        - Janus 生图页（与图片显示页位于同一区域，可层叠切换）
-        """
-        from PyQt6.QtWidgets import QStackedWidget, QToolBar
-
+        """创建图片显示面板的dock widget内容"""
+        # 添加文件输出调试
+        try:
+            with open("debug_output.txt", "a", encoding="utf-8") as f:
+                f.write("=== DEBUG: create_photo_display_dock_widget started ===\n")
+                f.flush()
+        except Exception as e:
+            pass
+        
+        print("=== DEBUG: create_photo_display_dock_widget started ===")
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        
+        print("=== DEBUG: create_photo_display_dock_widget started ===")
 
-        # 顶部工具条：用于在两个页面间切换
+        # 顶部工具条：用于在五个页面间切换
         toolbar = QToolBar()
         self.action_show_photo_view = QAction(self.get_text("Photo", "图片显示页"), self)
         self.action_show_janus = QAction(self.get_text("Janus Generate", "Janus生图"), self)
+        self.action_show_tag_edit = QAction(self.get_text("Tag Edit", "标签编辑页"), self)
+        self.action_show_ai_info = QAction(self.get_text("AI Info", "AI信息"), self)
+        self.action_show_tag_info = QAction(self.get_text("Tag Info", "标签信息"), self)
         toolbar.addAction(self.action_show_photo_view)
         toolbar.addAction(self.action_show_janus)
+        toolbar.addAction(self.action_show_tag_edit)
+        toolbar.addAction(self.action_show_ai_info)
+        toolbar.addAction(self.action_show_tag_info)
         layout.addWidget(toolbar)
 
         # 堆叠容器
@@ -575,11 +622,26 @@ class MainWindow(QMainWindow):
         self.janus_generate_page.request_generate.connect(self.on_janus_generate_requested)
         self.photo_area_stack.addWidget(self.janus_generate_page)
 
+        # 页面3：标签编辑页
+        from .tag_edit_page import TagEditPage
+        self.tag_edit_page = TagEditPage(self.db_manager, self.photo_manager)
+        self.photo_area_stack.addWidget(self.tag_edit_page)
+        
+        # 连接标签编辑页的前进和后退信号
+        self.tag_edit_page.previous_photo_requested.connect(self.show_previous_photo)
+        self.tag_edit_page.next_photo_requested.connect(self.show_next_photo)
+
+        # 页面4和5：AI信息页和标签信息页将在init_ui中创建，这里先添加占位符
+        # 注意：AI信息页和标签信息页将在init_ui中创建，这里不能直接访问
+
         layout.addWidget(self.photo_area_stack, 1)
 
         # 切换逻辑
         self.action_show_photo_view.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(0))
         self.action_show_janus.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(1))
+        self.action_show_tag_edit.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(2))
+        self.action_show_ai_info.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(3))
+        self.action_show_tag_info.triggered.connect(lambda: self.photo_area_stack.setCurrentIndex(4))
 
         return widget
 
@@ -617,6 +679,8 @@ class MainWindow(QMainWindow):
     
     def create_dock_widgets(self):
         """Create dock widgets for albums, search, photo display, and tags."""
+        print("=== DEBUG: create_dock_widgets开始创建 ===")
+        
         # Albums dock (相册管理面板)
         self.albums_dock = QDockWidget(self.get_text("Albums", "相册管理"), self)
         self.albums_dock.setObjectName("albums_dock")
@@ -641,14 +705,6 @@ class MainWindow(QMainWindow):
         self.photo_display_dock.setWidget(photo_display_widget)
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.photo_display_dock)
         
-        # Tags dock (标签面板)
-        self.tags_dock = QDockWidget(self.get_text("Tags", "标签"), self)
-        self.tags_dock.setObjectName("tags_dock")
-        self.tags_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
-        self.tag_manager = TagManager(self.db_manager, self.album_manager)
-        self.tags_dock.setWidget(self.tag_manager)
-        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.tags_dock)
-        
         # 设置面板的默认大小和位置
         self.setup_panel_layout()
         
@@ -656,7 +712,6 @@ class MainWindow(QMainWindow):
         self.albums_dock.setVisible(True)
         self.search_dock.setVisible(True)
         self.photo_display_dock.setVisible(True)
-        self.tags_dock.setVisible(True)
     
     def setup_panel_layout(self):
         """Setup the default panel layout for better usability."""
@@ -673,10 +728,6 @@ class MainWindow(QMainWindow):
         self.photo_display_dock.setMinimumWidth(300)
         self.photo_display_dock.resize(400, self.height())
         
-        # 标签面板 - 右侧，占20%宽度，增加最小宽度确保内容完整显示
-        self.tags_dock.setMinimumWidth(300)  # 从200增加到300
-        self.tags_dock.resize(350, self.height())  # 从250增加到350
-        
         # 设置面板的关闭按钮可见，允许用户临时关闭不需要的面板
         self.albums_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
                                     QDockWidget.DockWidgetFeature.DockWidgetMovable |
@@ -689,10 +740,6 @@ class MainWindow(QMainWindow):
         self.photo_display_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
                                            QDockWidget.DockWidgetFeature.DockWidgetMovable |
                                            QDockWidget.DockWidgetFeature.DockWidgetFloatable)
-        
-        self.tags_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | 
-                                  QDockWidget.DockWidgetFeature.DockWidgetMovable |
-                                  QDockWidget.DockWidgetFeature.DockWidgetFloatable)
     
     def save_layout(self):
         """保存当前面板布局到配置文件."""
@@ -708,14 +755,12 @@ class MainWindow(QMainWindow):
                 'panels_visible': {
                     'albums': self.albums_dock.isVisible(),
                     'search': self.search_dock.isVisible(),
-                    'photo_display': self.photo_display_dock.isVisible(),
-                    'tags': self.tags_dock.isVisible()
+                    'photo_display': self.photo_display_dock.isVisible()
                 },
                 'panels_floating': {
                     'albums': self.albums_dock.isFloating(),
                     'search': self.search_dock.isFloating(),
-                    'photo_display': self.photo_display_dock.isFloating(),
-                    'tags': self.tags_dock.isFloating()
+                    'photo_display': self.photo_display_dock.isFloating()
                 },
                 'panels_geometry': {
                     'albums': {
@@ -735,13 +780,7 @@ class MainWindow(QMainWindow):
                         'y': self.photo_display_dock.geometry().y(),
                         'width': self.photo_display_dock.geometry().width(),
                         'height': self.photo_display_dock.geometry().height()
-                    } if self.photo_display_dock.isFloating() else None,
-                    'tags': {
-                        'x': self.tags_dock.geometry().x(),
-                        'y': self.tags_dock.geometry().y(),
-                        'width': self.tags_dock.geometry().width(),
-                        'height': self.tags_dock.geometry().height()
-                    } if self.tags_dock.isFloating() else None
+                    } if self.photo_display_dock.isFloating() else None
                 }
             }
             
@@ -787,9 +826,6 @@ class MainWindow(QMainWindow):
                 if 'photo_display' in panels:
                     self.photo_display_dock.setVisible(panels['photo_display'])
                     self.photo_display_panel_action.setChecked(panels['photo_display'])
-                if 'tags' in panels:
-                    self.tags_dock.setVisible(panels['tags'])
-                    self.tags_panel_action.setChecked(panels['tags'])
                 self.logger.info("Panel visibility restored: %s", panels)
             
             # 恢复浮动面板的位置和大小
@@ -813,11 +849,6 @@ class MainWindow(QMainWindow):
                     geo = geometry['photo_display']
                     self.photo_display_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
                 
-                if 'tags' in floating and floating['tags'] and geometry['tags']:
-                    self.tags_dock.setFloating(True)
-                    geo = geometry['tags']
-                    self.tags_dock.setGeometry(geo['x'], geo['y'], geo['width'], geo['height'])
-                
                 self.logger.info("Floating panels restored: %s", floating)
             
             self.logger.info("Layout restored successfully")
@@ -832,13 +863,11 @@ class MainWindow(QMainWindow):
             self.albums_dock.setVisible(True)
             self.search_dock.setVisible(True)
             self.photo_display_dock.setVisible(True)
-            self.tags_dock.setVisible(True)
             
             # 更新菜单项状态
             self.albums_panel_action.setChecked(True)
             self.search_panel_action.setChecked(True)
             self.photo_display_panel_action.setChecked(True)
-            self.tags_panel_action.setChecked(True)
             
             # 重置到默认布局
             self.setup_panel_layout()
@@ -968,9 +997,7 @@ class MainWindow(QMainWindow):
         batch_processor_action.triggered.connect(self.show_batch_processor)
         tools_menu.addAction(batch_processor_action)
         
-        tag_manager_action = QAction(self.get_text("Tag Manager", "标签管理器"), self)
-        tag_manager_action.triggered.connect(self.show_tag_manager)
-        tools_menu.addAction(tag_manager_action)
+
         
         tools_menu.addSeparator()
         
@@ -1123,8 +1150,7 @@ class MainWindow(QMainWindow):
         if self.search_results_widget:
             self.search_results_widget.photo_selected.connect(self.on_search_photo_selected)
         
-        if self.tag_manager:
-            self.tag_manager.tag_selected.connect(self.on_tag_selected)
+
         
         # 连接照片查看器的信号
         if self.photo_viewer:
@@ -1138,7 +1164,7 @@ class MainWindow(QMainWindow):
         self.update_photo_count(len(selected_ids))
     
     def on_photo_selected(self, photo_id: int):
-        """Handle photo selection."""
+        """处理照片选择事件"""
         self.logger.info("Photo selected: photo_id=%d", photo_id)
         
         # 获取照片详细信息
@@ -1152,8 +1178,93 @@ class MainWindow(QMainWindow):
             
             # 更新标签面板
             self.update_tags_for_photo(photo_id)
+            
+            # 全局更新所有相关页面 - 这是关键修复
+            self.update_all_photo_display_pages(photo_data)
+            
         else:
-            self.logger.warning("Photo data not found or photo viewer not available: photo_id=%d", photo_id)
+            self.logger.warning("无法获取照片数据或PhotoViewer不存在: photo_id=%d", photo_id)
+    
+    def update_all_photo_display_pages(self, photo_data: dict):
+        """更新所有照片显示页面 - 确保所有页面都能显示选中的照片"""
+        try:
+            photo_id = photo_data.get('id')
+            self.logger.info("开始更新所有照片显示页面: photo_id=%s", photo_id)
+            
+            # 1. 更新标签编辑页（如果存在）
+            if hasattr(self, 'tag_edit_page') and self.tag_edit_page:
+                self.logger.info("正在更新标签编辑页: photo_id=%d", photo_id)
+                try:
+                    self.tag_edit_page.update_photo(photo_data)
+                    self.logger.info("标签编辑页更新完成: photo_id=%d", photo_id)
+                except Exception as e:
+                    self.logger.error("标签编辑页更新失败: photo_id=%d, error=%s", photo_id, str(e))
+            else:
+                self.logger.warning("标签编辑页不存在或未初始化")
+            
+            # 2. 更新AI信息页（如果存在）
+            if hasattr(self, 'ai_info_page') and self.ai_info_page:
+                self.logger.info("正在更新AI信息页: photo_id=%d", photo_id)
+                try:
+                    self.ai_info_page.update_ai_info_display(photo_data)
+                    self.logger.info("AI信息页更新完成: photo_id=%d", photo_id)
+                except Exception as e:
+                    self.logger.error("AI信息页更新失败: photo_id=%d, error=%s", photo_id, str(e))
+            else:
+                self.logger.warning("AI信息页不存在或未初始化")
+            
+            # 3. 更新标签信息页（如果存在）
+            if hasattr(self, 'tag_info_page') and self.tag_info_page:
+                self.logger.info("正在更新标签信息页: photo_id=%d", photo_id)
+                try:
+                    self.tag_info_page.update_photo_tags_display(photo_data)
+                    self.logger.info("标签信息页更新完成: photo_id=%d", photo_id)
+                except Exception as e:
+                    self.logger.error("标签信息页更新失败: photo_id=%d, error=%s", photo_id, str(e))
+            else:
+                self.logger.warning("标签信息页不存在或未初始化")
+            
+            # 4. 强制刷新当前显示的页面
+            self.refresh_current_photo_display_page(photo_data)
+            
+            self.logger.info("所有照片显示页面更新完成: photo_id=%d", photo_id)
+            
+        except Exception as e:
+            self.logger.error("更新所有照片显示页面失败: error=%s", str(e))
+    
+    def refresh_current_photo_display_page(self, photo_data: dict):
+        """刷新当前显示的照片页面"""
+        try:
+            if hasattr(self, 'photo_area_stack') and self.photo_area_stack:
+                current_index = self.photo_area_stack.currentIndex()
+                self.logger.info("当前页面索引: %d", current_index)
+                
+                # 根据当前页面索引，强制刷新对应页面
+                if current_index == 0:  # 图片显示页
+                    if hasattr(self, 'photo_viewer') and self.photo_viewer:
+                        self.photo_viewer.display_photo(photo_data)
+                        self.logger.info("图片显示页已刷新")
+                
+                elif current_index == 2:  # 标签编辑页
+                    if hasattr(self, 'tag_edit_page') and self.tag_edit_page:
+                        self.tag_edit_page.update_photo(photo_data)
+                        self.logger.info("标签编辑页已刷新")
+                
+                elif current_index == 3:  # AI信息页
+                    if hasattr(self, 'ai_info_page') and self.ai_info_page:
+                        self.ai_info_page.update_ai_info_display(photo_data)
+                        self.logger.info("AI信息页已刷新")
+                
+                elif current_index == 4:  # 标签信息页
+                    if hasattr(self, 'tag_info_page') and self.tag_info_page:
+                        self.tag_info_page.update_photo_tags_display(photo_data)
+                        self.logger.info("标签信息页已刷新")
+                
+                else:
+                    self.logger.info("未知页面索引: %d", current_index)
+            
+        except Exception as e:
+            self.logger.error("刷新当前照片显示页面失败: error=%s", str(e))
     
     def load_settings(self):
         """Load application settings."""
@@ -1521,132 +1632,115 @@ class MainWindow(QMainWindow):
             
             # Update tags panel (6区)
             self.update_tags_for_photo(photo_id)
+            
+            # 修复：确保搜索结果中的照片选择也能正确更新所有页面
+            self.update_all_photo_display_pages(photo_data)
+            
+            self.logger.info("Search photo selection completed and all pages updated: photo_id=%d", photo_id)
+        else:
+            self.logger.warning("无法获取搜索结果照片数据: photo_id=%d", photo_id)
     
-    def on_photo_selected(self, photo_id: int):
-        """Handle photo selection from main thumbnail widget."""
-        self.logger.info("Photo selected from main widget: photo_id=%d", photo_id)
-        
-        # Get photo information
-        photo_data = self.photo_manager.get_photo_info(photo_id)
-        if photo_data:
-            # Try to find original image
-            original_path = self.photo_manager.find_original_image_by_hash(photo_data["file_hash"])
-            
-            if original_path:
-                # Original image found, display it
-                self.photo_viewer.display_photo(photo_data)
-                self.logger.info("Original image displayed: %s", original_path)
-            else:
-                # Original image not found, but we can still show metadata
-                self.photo_viewer.display_photo_info_only(photo_data)
-                self.logger.warning("Original image not found, showing metadata only: photo_id=%s", photo_id)
-            
-            # Update photo info panel (5区)
-            self.update_photo_info(photo_id)
-            
-            # Update tags panel (6区)
-            self.update_tags_for_photo(photo_id)
+
     
     def update_tags_for_photo(self, photo_id: int):
         """Update tags panel for selected photo."""
-        if hasattr(self, 'tag_manager'):
-            photo_data = self.photo_manager.get_photo_info(photo_id)
-            if photo_data:
-                # 更新tag_manager中的照片显示（包括AI信息和标签）
-                self.tag_manager.update_photo_display(photo_data)
-                self.logger.info("Tags and AI info updated for photo: photo_id=%s, is_ai_generated=%s", 
-                               photo_id, photo_data.get('is_ai_generated', False))
+        # 此方法已废弃，标签信息现在通过图片显示区的页面更新
+        self.logger.info("update_tags_for_photo method deprecated, tags are now updated via photo display area pages")
     
     def search_photos(self):
-        """Enhanced search photos based on current filters."""
-        # 获取基础搜索参数
-        search_text = self.search_box.text() if self.search_box else ""
-        min_rating = self.rating_filter.value() if (hasattr(self, 'rating_enabled') and self.rating_enabled.isChecked() and hasattr(self, 'rating_filter')) else 0
-        favorites_only = self.favorites_only.isChecked() if hasattr(self, 'favorites_only') else False
-        
-        # 获取高级筛选参数（只有勾选后才生效）
-        min_width = self.min_width.value() if (hasattr(self, 'min_width') and hasattr(self, 'min_width_enabled') and self.min_width_enabled.isChecked()) else 0
-        min_height = self.min_height.value() if (hasattr(self, 'min_height') and hasattr(self, 'min_height_enabled') and self.min_height_enabled.isChecked()) else 0
-        min_size = self.min_size.value() if (hasattr(self, 'min_size') and hasattr(self, 'min_size_enabled') and self.min_size_enabled.isChecked()) else 0
-        camera_filter = self.camera_filter.text() if (hasattr(self, 'camera_filter') and hasattr(self, 'camera_filter_enabled') and self.camera_filter_enabled.isChecked()) else ""
-        
-        # 安全处理日期范围（只有勾选后才生效）
+        """执行照片搜索"""
         try:
-            if hasattr(self, 'date_enabled') and self.date_enabled.isChecked():
-                date_from = self.date_from.date() if hasattr(self, 'date_from') else QDate.currentDate().addDays(-365)
-                date_to = self.date_to.date() if hasattr(self, 'date_to') else QDate.currentDate()
-            else:
-                date_from = ""
-                date_to = ""
-        except Exception as e:
-            self.logger.warning(f"Failed to get date range: {e}, using empty dates")
-            date_from = ""
-            date_to = ""
-        
-        # 解析搜索关键词
-        search_terms = self.parse_search_terms(search_text)
-        
-        # Build search parameters
-        search_params = {
-            "query": search_text,
-            "search_terms": search_terms,
-            "rating_min": min_rating,
-            "min_width": min_width,
-            "min_height": min_height,
-            "min_size_kb": min_size,
-            "camera_filter": camera_filter,
-            "limit": 500  # 增加结果数量
-        }
-        
-        # 只有勾选了日期筛选才添加日期参数
-        if date_from and date_to:
-            search_params["date_from"] = date_from.toString("yyyy-MM-dd")
-            search_params["date_to"] = date_to.toString("yyyy-MM-dd")
-        
-        if favorites_only:
-            search_params["favorites_only"] = True
-        
-        # Perform search
-        results = self.photo_manager.search_photos(**search_params)
-        
-        # 如果没有搜索结果，尝试更宽松的搜索
-        if not results and search_text:
-            self.logger.info("No results found, trying broader search")
-            # 只使用文本搜索，忽略其他筛选条件
-            broader_params = {
-                "query": search_text,
-                "search_terms": search_terms,
-                "limit": 500
-            }
-            results = self.photo_manager.search_photos(**broader_params)
+            # 获取搜索关键词
+            query = self.search_box.text().strip()
+            if not query:
+                self.logger.warning("搜索关键词为空")
+                return
             
-            if results:
-                self.logger.info("Broader search found results: count=%d", len(results))
-        
-        # 保存搜索结果用于导航
-        self.current_search_results = results
-        
-        # 清除相册照片列表，因为现在显示的是搜索结果
-        self.current_album_photos = None
-        
-        # Display results in search results widget
-        if hasattr(self, 'search_results_widget'):
-            self.search_results_widget.display_photos(results)
-        else:
-            self.logger.warning("search_results_widget not found")
-        
-        # 同时显示在主窗口的缩略图组件中
-        if self.thumbnail_widget:
-            self.thumbnail_widget.display_photos(results)
-            self.logger.info("Search results displayed in main thumbnail widget: count=%d", len(results))
-        else:
-            self.logger.warning("main thumbnail_widget not found")
-        
-        # Update status
-        self.update_photo_count(len(results))
-        
-        self.logger.info("Enhanced search completed: query=%s, search_terms=%s, results_count=%s, min_rating=%s, favorites_only=%s, min_width=%s, min_height=%s, min_size=%s, camera_filter=%s", 
-                        search_text, search_terms, len(results), min_rating, favorites_only, min_width, min_height, min_size, camera_filter)
+            # 获取搜索选项
+            favorites_only = self.favorites_only.isChecked()
+            rating_min = self.rating_filter.value() if hasattr(self, 'rating_enabled') and self.rating_enabled.isChecked() else 0
+            min_width = self.min_width.value() if hasattr(self, 'min_width_enabled') and self.min_width_enabled.isChecked() else 0
+            min_height = self.min_height.value() if hasattr(self, 'min_width_enabled') and self.min_width_enabled.isChecked() else 0
+            min_size_kb = self.min_size.value() if hasattr(self, 'min_size_enabled') and self.min_size_enabled.isChecked() else 0
+            camera_filter = self.camera_filter.text() if hasattr(self, 'camera_filter_enabled') and self.camera_filter_enabled.isChecked() else ""
+            date_from = self.date_from.date().toString("yyyy-MM-dd") if hasattr(self, 'date_enabled') and self.date_enabled.isChecked() else ""
+            date_to = self.date_to.date().toString("yyyy-MM-dd") if hasattr(self, 'date_enabled') and self.date_enabled.isChecked() else ""
+            
+            # 获取当前选中的相册ID列表
+            album_ids = self.get_current_selected_album_ids()
+            
+            # 只有在启用相册搜索时才传递相册ID
+            if not self.album_search_enabled.isChecked():
+                album_ids = None
+                self.logger.info("相册搜索未启用，搜索范围：所有照片")
+            else:
+                self.logger.info(f"相册搜索已启用，搜索范围：相册ID {album_ids}")
+            
+            self.logger.info(f"开始搜索照片: query='{query}', favorites_only={favorites_only}, rating_min={rating_min}, album_ids={album_ids}")
+            
+            # 执行搜索
+            results = self.photo_manager.search_photos(
+                query=query,
+                favorites_only=favorites_only,
+                rating_min=rating_min,
+                min_width=min_width,
+                min_height=min_height,
+                min_size_kb=min_size_kb,
+                camera_filter=camera_filter,
+                date_from=date_from,
+                date_to=date_to,
+                album_ids=album_ids,
+                limit=100
+            )
+            
+            self.logger.info(f"搜索完成，找到 {len(results)} 张照片")
+            
+            # 更新搜索结果显示
+            if hasattr(self, 'search_results_widget'):
+                self.search_results_widget.display_photos(results)
+            
+            # 同时更新主窗口的缩略图显示
+            if self.thumbnail_widget:
+                self.thumbnail_widget.display_photos(results)
+                self.logger.info("搜索结果已更新到主缩略图显示: count=%d", len(results))
+            
+            # 保存搜索结果用于导航
+            self.current_search_results = results
+            
+            # 更新照片计数
+            self.update_photo_count(len(results))
+            
+        except Exception as e:
+            self.logger.error(f"搜索照片失败: {str(e)}")
+            QMessageBox.critical(self, "搜索失败", f"搜索照片时发生错误：{str(e)}")
+    
+    def get_current_selected_album_ids(self) -> List[int]:
+        """获取当前选中的相册ID列表"""
+        try:
+            album_ids = []
+            
+            # 检查是否启用了多选模式
+            if hasattr(self, 'album_manager') and self.album_manager:
+                if hasattr(self.album_manager, 'multi_select_mode') and self.album_manager.multi_select_mode:
+                    # 多选模式：获取所有选中的相册ID
+                    if hasattr(self.album_manager, 'selected_album_ids'):
+                        album_ids = self.album_manager.selected_album_ids.copy()
+                        self.logger.info(f"多选模式：选中的相册ID列表: {album_ids}")
+                else:
+                    # 单选模式：获取当前选中的相册ID
+                    if hasattr(self.album_manager, 'current_album_id') and self.album_manager.current_album_id:
+                        album_ids = [self.album_manager.current_album_id]
+                        self.logger.info(f"单选模式：当前相册ID: {album_ids}")
+            
+            # 如果没有选中任何相册，返回空列表（搜索所有照片）
+            if not album_ids:
+                self.logger.info("未选中任何相册，搜索范围：所有照片")
+            
+            return album_ids
+            
+        except Exception as e:
+            self.logger.error(f"获取当前选中相册ID失败: {str(e)}")
+            return []
     
     def save_search_condition(self):
         """保存当前搜索条件"""
@@ -1837,8 +1931,53 @@ class MainWindow(QMainWindow):
     
     def update_photo_info(self, photo_id: int):
         """Update photo information display."""
-        # In a real implementation, this would update the photo viewer
-        self.logger.info("Updating photo info: photo_id=%s", photo_id)
+        try:
+            self.logger.info("Updating photo info: photo_id=%s", photo_id)
+            
+            # 获取最新的照片信息
+            photo_data = self.photo_manager.get_photo_info(photo_id)
+            if not photo_data:
+                self.logger.warning("无法获取照片信息: photo_id=%s", photo_id)
+                return
+            
+            # 更新当前页面的显示
+            current_page_index = self.photo_area_stack.currentIndex()
+            
+            # 如果是图片显示页，更新PhotoViewer
+            if current_page_index == 0 and hasattr(self, 'photo_viewer') and self.photo_viewer:
+                self.photo_viewer.update_info_panel()
+                self.logger.info("已更新图片显示页信息: photo_id=%s", photo_id)
+            
+            # 如果是标签编辑页，更新标签编辑面板
+            elif current_page_index == 2 and hasattr(self, 'tag_edit_page') and self.tag_edit_page:
+                if hasattr(self.tag_edit_page, 'tag_edit_panel') and self.tag_edit_page.tag_edit_panel:
+                    self.tag_edit_page.tag_edit_panel.update_favorite_display(photo_data)
+                    self.logger.info("已更新标签编辑页信息: photo_id=%s", photo_id)
+            
+            # 如果是AI信息页，更新AI信息面板
+            elif current_page_index == 1 and hasattr(self, 'ai_info_page') and self.ai_info_page:
+                if hasattr(self.ai_info_page, 'update_ai_info_display'):
+                    self.ai_info_page.update_ai_info_display(photo_data)
+                    self.logger.info("已更新AI信息页: photo_id=%s", photo_id)
+            
+            # 如果是标签信息页，更新标签信息面板
+            elif current_page_index == 3 and hasattr(self, 'tag_info_page') and self.tag_info_page:
+                if hasattr(self.tag_info_page, 'update_photo_tags_display'):
+                    self.tag_info_page.update_photo_tags_display(photo_data)
+                    self.logger.info("已更新标签信息页: photo_id=%s", photo_id)
+            
+            # 刷新缩略图显示
+            if hasattr(self, 'thumbnail_widget') and self.thumbnail_widget:
+                self.thumbnail_widget.refresh_display()
+                self.logger.info("已刷新缩略图显示: photo_id=%s", photo_id)
+            
+            # 刷新搜索结果显示
+            if hasattr(self, 'search_results_widget') and self.search_results_widget:
+                self.search_results_widget.refresh_display()
+                self.logger.info("已刷新搜索结果显示: photo_id=%s", photo_id)
+            
+        except Exception as e:
+            self.logger.error("更新照片信息失败: photo_id=%s, error=%s", photo_id, str(e))
     
     def update_photo_count(self, count: int):
         """Update the photo count display."""
@@ -1928,10 +2067,33 @@ class MainWindow(QMainWindow):
     
     def get_current_photo_id(self) -> int:
         """获取当前显示的照片ID"""
-        if hasattr(self, 'photo_viewer') and self.photo_viewer.current_photo:
-            return self.photo_viewer.current_photo.get('id')
-        return None
-        self.refresh_photos()
+        try:
+            # 首先检查当前激活的页面
+            current_page_index = self.photo_area_stack.currentIndex()
+            
+            # 如果是标签编辑页，从标签编辑页获取当前照片ID
+            if current_page_index == 2 and hasattr(self, 'tag_edit_page') and self.tag_edit_page:
+                current_photo = self.tag_edit_page.get_current_photo()
+                if current_photo and current_photo.get('id'):
+                    return current_photo.get('id')
+            
+            # 如果是图片显示页，从PhotoViewer获取当前照片ID
+            elif current_page_index == 0 and hasattr(self, 'photo_viewer') and self.photo_viewer.current_photo:
+                return self.photo_viewer.current_photo.get('id')
+            
+            # 如果都没有，尝试从搜索结果或相册照片中获取
+            if hasattr(self, 'current_search_results') and self.current_search_results:
+                # 返回搜索结果的最后一张照片ID
+                return self.current_search_results[-1].get('id') if self.current_search_results else None
+            elif hasattr(self, 'current_album_photos') and self.current_album_photos:
+                # 返回相册照片的最后一张照片ID
+                return self.current_album_photos[-1].get('id') if self.current_album_photos else None
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error("获取当前照片ID失败: %s", str(e))
+            return None
     
     def on_album_selected(self, album_id: int):
         """Handle album selection."""
@@ -1944,6 +2106,9 @@ class MainWindow(QMainWindow):
             
             # 刷新照片显示（这会自动加载相册中的照片）
             self.refresh_photos()
+            
+            # 刷新相册搜索状态显示
+            self.refresh_album_search_status()
             
             self.logger.info("Album selected: album_id=%s", album_id)
             
@@ -2157,11 +2322,7 @@ class MainWindow(QMainWindow):
         )
         batch_dialog.exec()
     
-    def show_tag_manager(self):
-        """Show tag manager dialog."""
-        if hasattr(self, 'tags_dock'):
-            self.tags_dock.setVisible(True)
-            self.tags_dock.raise_()
+
     
     def show_plugin_manager(self):
         """Show the plugin manager dialog."""
@@ -2572,15 +2733,219 @@ class MainWindow(QMainWindow):
                 self.import_directory_optimized(directory, settings)
             # 如果用户取消，不执行任何操作
 
+    def on_album_search_enabled_changed(self, state):
+        """相册搜索选项状态变化处理"""
+        try:
+            if state == Qt.CheckState.Checked.value:
+                # 检查是否有选中的相册
+                album_ids = self.get_current_selected_album_ids()
+                if album_ids:
+                    self.update_album_search_status(album_ids)
+                    self.logger.info("启用指定相册搜索")
+                else:
+                    # 没有选中相册，取消勾选并提示
+                    self.album_search_enabled.setChecked(False)
+                    QMessageBox.information(self, "提示", "请先选择一个或多个相册，然后启用指定相册搜索")
+            else:
+                self.update_album_search_status([])
+                self.logger.info("禁用指定相册搜索")
+                
+        except Exception as e:
+            self.logger.error(f"相册搜索选项状态变化处理失败: {str(e)}")
+    
+    def update_album_search_status(self, album_ids: List[int]):
+        """更新相册搜索状态显示"""
+        try:
+            if not album_ids:
+                self.album_search_status.setText("未选择相册")
+                self.album_search_status.setStyleSheet("color: #666; font-size: 11px;")
+                return
+            
+            # 获取相册名称
+            album_names = []
+            if hasattr(self, 'album_manager') and self.album_manager:
+                for album_id in album_ids:
+                    album_info = self.album_manager.get_album(album_id)
+                    if album_info:
+                        album_names.append(album_info.get('name', f'相册{album_id}'))
+                    else:
+                        album_names.append(f'相册{album_id}')
+            
+            if album_names:
+                if len(album_names) == 1:
+                    status_text = f"搜索范围：{album_names[0]}"
+                else:
+                    status_text = f"搜索范围：{len(album_names)}个相册"
+                
+                self.album_search_status.setText(status_text)
+                self.album_search_status.setStyleSheet("color: #0066cc; font-size: 11px; font-weight: bold;")
+            else:
+                self.album_search_status.setText("相册信息获取失败")
+                self.album_search_status.setStyleSheet("color: #cc0000; font-size: 11px;")
+                
+        except Exception as e:
+            self.logger.error(f"更新相册搜索状态显示失败: {str(e)}")
+            self.album_search_status.setText("状态更新失败")
+            self.album_search_status.setStyleSheet("color: #cc0000; font-size: 11px;")
+    
+    def refresh_album_search_status(self):
+        """刷新相册搜索状态显示（当相册选择变化时调用）"""
+        try:
+            if hasattr(self, 'album_search_enabled') and self.album_search_enabled.isChecked():
+                album_ids = self.get_current_selected_album_ids()
+                self.update_album_search_status(album_ids)
+                
+        except Exception as e:
+            self.logger.error(f"刷新相册搜索状态失败: {str(e)}")
+    
+
+    
+
+    
+    def on_plugins_changed(self):
+        """Handle plugin changes."""
+        # In a real implementation, this would reload plugins
+        self.logger.info("Plugins changed")
+    
+    def refresh_current_photo_ai_info(self):
+        """刷新当前选中图片的AI信息"""
+        try:
+            current_photo_id = self.get_current_photo_id()
+            if current_photo_id <= 0:
+                QMessageBox.warning(self, "警告", "请先选择一张图片")
+                return
+            
+            # 显示进度对话框
+            progress = QProgressDialog("正在刷新AI信息...", "取消", 0, 1, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setValue(0)
+            
+            # 刷新AI信息
+            success = self.photo_manager.refresh_photo_ai_metadata(current_photo_id)
+            
+            progress.setValue(1)
+            
+            if success:
+                QMessageBox.information(self, "成功", "AI信息刷新成功")
+                # 重新加载当前图片信息
+                self.update_photo_info(current_photo_id)
+                self.update_tags_for_photo(current_photo_id)
+            else:
+                QMessageBox.warning(self, "警告", "AI信息刷新失败")
+        
+        except Exception as e:
+            self.logger.error("Failed to refresh current photo AI info: error=%s", str(e))
+            QMessageBox.critical(self, "错误", f"刷新AI信息时发生错误：{str(e)}")
+    
+    def refresh_album_ai_info(self):
+        """刷新当前相册中所有图片的AI信息"""
+        try:
+            # 获取当前选中的相册
+            if not hasattr(self, 'current_album_id') or not self.current_album_id:
+                QMessageBox.warning(self, "警告", "请先选择一个相册")
+                return
+            
+            # 确认对话框
+            reply = QMessageBox.question(
+                self, 
+                "确认刷新", 
+                f"确定要刷新相册中所有图片的AI信息吗？\n这可能需要一些时间。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            
+            # 显示进度对话框
+            progress = QProgressDialog("正在刷新相册AI信息...", "取消", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setValue(0)
+            
+            # 刷新相册AI信息
+            result = self.photo_manager.refresh_album_ai_metadata(self.current_album_id)
+            
+            progress.close()
+            
+            # 显示结果
+            message = f"刷新完成！\n成功：{result['success']} 张\n失败：{result['failed']} 张\n总计：{result['total']} 张"
+            QMessageBox.information(self, "刷新完成", message)
+            
+            # 重新加载相册
+            if self.album_manager:
+                self.album_manager.load_album_photos(self.current_album_id)
+        
+        except Exception as e:
+            self.logger.error("Failed to refresh album AI info: error=%s", str(e))
+            QMessageBox.critical(self, "错误", f"刷新相册AI信息时发生错误：{str(e)}")
+    
+    def on_rating_enabled_changed(self, state):
+        """处理评分筛选启用状态变化"""
+        self.rating_filter.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_min_width_enabled_changed(self, state):
+        """处理最小宽度筛选启用状态变化"""
+        self.min_width.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_min_size_enabled_changed(self, state):
+        """处理最小大小筛选启用状态变化"""
+        self.min_size.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_camera_filter_enabled_changed(self, state):
+        """处理相机筛选启用状态变化"""
+        self.camera_filter.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def on_date_enabled_changed(self, state):
+        """处理日期筛选启用状态变化"""
+        self.date_from.setEnabled(state == Qt.CheckState.Checked)
+        self.date_to.setEnabled(state == Qt.CheckState.Checked)
+        if state == Qt.CheckState.Checked:
+            self.search_photos()
+    
+    def closeEvent(self, event):
+        """Handle application close."""
+        # 保存当前布局
+        self.save_layout()
+        
+        # 保存其他设置
+        self.save_settings()
+        
+        # Unload plugins
+        self.plugin_manager.unload_all_plugins()
+        
+        self.logger.info("Application closing")
+        event.accept()
+
 
 def main():
     """Main entry point for the GUI application."""
+    # 添加文件输出调试
+    try:
+        with open("debug_output.txt", "w", encoding="utf-8") as f:
+            f.write("=== DEBUG: main function started ===\n")
+            f.flush()
+    except Exception as e:
+        pass
+    
+    print("=== DEBUG: main function started ===")
     app = QApplication(sys.argv)
+    print("=== DEBUG: QApplication created ===")
     app.setApplicationName("PyPhotoManager")
     app.setApplicationVersion("0.1.0")
     
+    print("=== DEBUG: creating MainWindow ===")
     window = MainWindow()
+    print("=== DEBUG: MainWindow created ===")
     window.show()
+    print("=== DEBUG: MainWindow displayed ===")
     
+    print("=== DEBUG: starting app.exec() ===")
     return app.exec()
     

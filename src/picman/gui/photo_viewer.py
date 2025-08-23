@@ -225,6 +225,11 @@ class PhotoViewer(QWidget):
         # Install event filter for mouse wheel zoom
         self.scroll_area.viewport().installEventFilter(self)
     
+    def set_info_panel_visible(self, visible: bool):
+        """设置元数据面板的显示状态"""
+        if self.info_panel:
+            self.info_panel.setVisible(visible)
+    
     def create_info_panel(self) -> QWidget:
         """Create the photo information and controls panel."""
         panel = QFrame()
@@ -378,6 +383,16 @@ class PhotoViewer(QWidget):
     
     def display_photo(self, photo_data: dict):
         """显示照片大图和详细信息。"""
+        # 添加文件输出调试
+        try:
+            with open("debug_output.txt", "a", encoding="utf-8") as f:
+                f.write(f"=== DEBUG: PhotoViewer.display_photo被调用了！photo_data={photo_data} ===\n")
+                f.flush()
+        except Exception as e:
+            pass
+        
+        print(f"=== DEBUG: PhotoViewer.display_photo被调用了！photo_data={photo_data} ===")
+        
         # 检查是否是同一张照片，如果是则跳过重新加载
         if (self.current_photo and 
             self.current_photo.get("filepath") == photo_data.get("filepath") and
@@ -709,11 +724,46 @@ class PhotoViewer(QWidget):
     
     def toggle_favorite(self, state: int):
         """Toggle photo favorite status."""
-        if self.current_photo and "id" in self.current_photo:
-            # In a real implementation, update the database
-            is_favorite = state == Qt.CheckState.Checked.value
-            self.current_photo["is_favorite"] = is_favorite
-            self.photo_updated.emit(self.current_photo["id"])
+        try:
+            if self.current_photo and "id" in self.current_photo:
+                photo_id = self.current_photo["id"]
+                is_favorite = state == Qt.CheckState.Checked.value
+                
+                # 更新内存中的数据
+                self.current_photo["is_favorite"] = is_favorite
+                
+                # 更新数据库
+                try:
+                    # 获取主窗口的photo_manager
+                    main_window = self.window()
+                    if main_window and hasattr(main_window, 'photo_manager'):
+                        # 使用photo_manager更新数据库
+                        success = main_window.photo_manager.toggle_favorite(photo_id)
+                        if success:
+                            self.logger.info("收藏状态更新成功: photo_id=%s, is_favorite=%s", photo_id, is_favorite)
+                            # 发送更新信号
+                            self.photo_updated.emit(photo_id)
+                        else:
+                            self.logger.error("收藏状态更新失败: photo_id=%s, is_favorite=%s", photo_id, is_favorite)
+                            # 回退内存中的状态
+                            self.current_photo["is_favorite"] = not is_favorite
+                            # 回退UI状态
+                            self.favorite_checkbox.setChecked(not is_favorite)
+                    else:
+                        self.logger.error("Photo manager not available")
+                        # 回退UI状态
+                        self.favorite_checkbox.setChecked(not is_favorite)
+                except Exception as e:
+                    self.logger.error("更新收藏状态失败: %s", str(e))
+                    # 回退内存中的状态
+                    self.current_photo["is_favorite"] = not is_favorite
+                    # 回退UI状态
+                    self.favorite_checkbox.setChecked(not is_favorite)
+            else:
+                self.logger.warning("无法更新收藏状态：没有有效的照片数据")
+                
+        except Exception as e:
+            self.logger.error("收藏状态切换失败: %s", str(e))
     
     def update_notes(self):
         """Update photo notes."""
@@ -791,24 +841,44 @@ class PhotoViewer(QWidget):
         2. 直接应用用户旋转角度
         3. 使用Qt的QTransform进行旋转，更可靠
         """
-        if not self.original_pixmap or self.original_pixmap.isNull():
-            return
-        
         try:
+            if not self.original_pixmap or self.original_pixmap.isNull():
+                self.logger.warning("无法应用旋转：没有有效的原图")
+                return
+            
             # 使用Qt的QTransform进行旋转
             if self.rotation_angle != 0:
-                transform = QTransform().rotate(self.rotation_angle)
-                rotated = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
-                self.current_pixmap = rotated
-                self.logger.info("应用用户旋转: rotation_angle=%s", self.rotation_angle,
-                               original_size=f"{self.original_pixmap.width()}x{self.original_pixmap.height()}",
-                               rotated_size=f"{rotated.width()}x{rotated.height()}")
+                try:
+                    transform = QTransform().rotate(self.rotation_angle)
+                    rotated = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                    
+                    if not rotated.isNull():
+                        self.current_pixmap = rotated
+                        self.logger.info("应用用户旋转: rotation_angle=%s", self.rotation_angle,
+                                       original_size=f"{self.original_pixmap.width()}x{self.original_pixmap.height()}",
+                                       rotated_size=f"{rotated.width()}x{rotated.height()}")
+                    else:
+                        self.logger.error("旋转后的图片无效")
+                        # 回退到原图
+                        self.current_pixmap = self.original_pixmap
+                        return
+                        
+                except Exception as transform_error:
+                    self.logger.error("QTransform旋转失败: %s", str(transform_error))
+                    # 如果QTransform失败，回退到原图
+                    self.current_pixmap = self.original_pixmap
+                    return
             else:
                 self.current_pixmap = self.original_pixmap
                 self.logger.info("无旋转，使用原图")
             
             # 应用缩放并显示
-            self.apply_zoom_and_display()
+            try:
+                self.apply_zoom_and_display()
+            except Exception as display_error:
+                self.logger.error("应用缩放和显示失败: %s", str(display_error))
+                # 如果显示失败，尝试基础显示
+                self._basic_display()
             
         except Exception as e:
             self.logger.error("应用旋转失败: %s", str(e))
@@ -835,57 +905,163 @@ class PhotoViewer(QWidget):
         self.apply_zoom_and_display()
     
     def rotate_left(self):
-        """Rotate image 90 degrees counter-clockwise (逆时针).
-        
-        参照照片编辑器的实现：直接累加角度，从原图重新应用旋转
-        """
-        if not self.original_pixmap or self.original_pixmap.isNull():
-            self.logger.warning("无法旋转：没有有效的图片")
-            return
-        
-        old_angle = self.rotation_angle
-        self.rotation_angle = (self.rotation_angle - 90) % 360
-        self.logger.info("逆时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
-        self.apply_rotation()
-        self.update_rotation_label()
-        # 启用保存按钮
-        self.save_rotation_btn.setEnabled(True)
+        """Rotate image 90 degrees counter-clockwise (逆时针)."""
+        try:
+            if not self.original_pixmap or self.original_pixmap.isNull():
+                self.logger.warning("无法旋转：没有有效的图片")
+                return
+            
+            old_angle = self.rotation_angle
+            # 修复：逆时针旋转90度应该是加90度，不是减90度
+            self.rotation_angle = (self.rotation_angle + 90) % 360
+            self.logger.info("逆时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
+            
+            # 应用旋转并立即显示
+            self.apply_rotation_and_display()
+            
+            # 更新UI
+            self.update_rotation_label()
+            # 启用保存按钮
+            self.save_rotation_btn.setEnabled(True)
+            
+        except Exception as e:
+            self.logger.error("逆时针旋转失败: %s", str(e))
+            # 回退旋转角度
+            self.rotation_angle = old_angle
+            self.update_rotation_label()
     
     def rotate_right(self):
-        """Rotate image 90 degrees clockwise (顺时针).
-        
-        参照照片编辑器的实现：直接累加角度，从原图重新应用旋转
-        """
-        if not self.original_pixmap or self.original_pixmap.isNull():
-            self.logger.warning("无法旋转：没有有效的图片")
-            return
-        
-        old_angle = self.rotation_angle
-        self.rotation_angle = (self.rotation_angle + 90) % 360
-        self.logger.info("顺时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
-        self.apply_rotation()
-        self.update_rotation_label()
-        # 启用保存按钮
-        self.save_rotation_btn.setEnabled(True)
+        """Rotate image 90 degrees clockwise (顺时针)."""
+        try:
+            if not self.original_pixmap or self.original_pixmap.isNull():
+                self.logger.warning("无法旋转：没有有效的图片")
+                return
+            
+            old_angle = self.rotation_angle
+            # 修复：顺时针旋转90度应该是减90度
+            self.rotation_angle = (self.rotation_angle - 90) % 360
+            self.logger.info("顺时针旋转90度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
+            
+            # 应用旋转并立即显示
+            self.apply_rotation_and_display()
+            
+            # 更新UI
+            self.update_rotation_label()
+            # 启用保存按钮
+            self.save_rotation_btn.setEnabled(True)
+            
+        except Exception as e:
+            self.logger.error("顺时针旋转失败: %s", str(e))
+            # 回退旋转角度
+            self.rotation_angle = old_angle
+            self.update_rotation_label()
     
     def rotate_180(self):
-        """Rotate image by 180 degrees.
-        
-        参照照片编辑器的实现：直接累加角度，从原图重新应用旋转
-        """
-        if not self.original_pixmap or self.original_pixmap.isNull():
-            self.logger.warning("无法旋转：没有有效的图片")
-            return
-        
-        old_angle = self.rotation_angle
-        self.rotation_angle = (self.rotation_angle + 180) % 360
-        self.logger.info("旋转180度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
-        self.apply_rotation()
-        self.update_rotation_label()
-        # 启用保存按钮
-        self.save_rotation_btn.setEnabled(True)
+        """Rotate image by 180 degrees."""
+        try:
+            if not self.original_pixmap or self.original_pixmap.isNull():
+                self.logger.warning("无法旋转：没有有效的图片")
+                return
+            
+            old_angle = self.rotation_angle
+            self.rotation_angle = (self.rotation_angle + 180) % 360
+            self.logger.info("旋转180度: old_angle=%s, new_angle=%s", old_angle, self.rotation_angle)
+            
+            # 应用旋转并立即显示
+            self.apply_rotation_and_display()
+            
+            # 更新UI
+            self.update_rotation_label()
+            # 启用保存按钮
+            self.save_rotation_btn.setEnabled(True)
+            
+        except Exception as e:
+            self.logger.error("旋转180度失败: %s", str(e))
+            # 回退旋转角度
+            self.rotation_angle = old_angle
+            self.update_rotation_label()
     
-
+    def apply_rotation_and_display(self):
+        """应用旋转并立即显示 - 这是修复后的核心方法"""
+        try:
+            if not self.original_pixmap or self.original_pixmap.isNull():
+                self.logger.warning("无法应用旋转：没有有效的原图")
+                return
+            
+            self.logger.info("开始应用旋转: rotation_angle=%s", self.rotation_angle)
+            
+            # 使用Qt的QTransform进行旋转
+            if self.rotation_angle != 0:
+                try:
+                    transform = QTransform().rotate(self.rotation_angle)
+                    rotated = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                    
+                    if not rotated.isNull():
+                        self.current_pixmap = rotated
+                        self.logger.info("旋转成功: angle=%s, original_size=%s, rotated_size=%s", 
+                                       self.rotation_angle,
+                                       f"{self.original_pixmap.width()}x{self.original_pixmap.height()}",
+                                       f"{rotated.width()}x{rotated.height()}")
+                    else:
+                        self.logger.error("旋转后的图片无效")
+                        # 回退到原图
+                        self.current_pixmap = self.original_pixmap
+                        return
+                        
+                except Exception as transform_error:
+                    self.logger.error("QTransform旋转失败: %s", str(transform_error))
+                    # 如果QTransform失败，回退到原图
+                    self.current_pixmap = self.original_pixmap
+                    return
+            else:
+                self.current_pixmap = self.original_pixmap
+                self.logger.info("无旋转，使用原图")
+            
+            # 立即显示旋转后的图片
+            self.display_rotated_image()
+            
+        except Exception as e:
+            self.logger.error("应用旋转失败: %s", str(e))
+            # 如果失败，回退到原图
+            self.current_pixmap = self.original_pixmap
+            self.display_rotated_image()
+    
+    def display_rotated_image(self):
+        """显示旋转后的图片"""
+        try:
+            if not self.current_pixmap or self.current_pixmap.isNull():
+                self.logger.warning("无法显示：没有有效的图片")
+                return
+            
+            # 应用缩放并显示
+            if self.zoom_factor != 1.0:
+                # 计算新的尺寸
+                new_width = int(self.current_pixmap.width() * self.zoom_factor)
+                new_height = int(self.current_pixmap.height() * self.zoom_factor)
+                
+                # 缩放图片
+                scaled = self.current_pixmap.scaled(
+                    new_width, new_height,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                self.image_label.setPixmap(scaled)
+                self.logger.info("显示缩放后的旋转图片: zoom=%s, size=%s", 
+                               self.zoom_factor, f"{scaled.width()}x{scaled.height()}")
+            else:
+                # 适应窗口大小
+                scaled = self.scale_pixmap(self.current_pixmap)
+                self.image_label.setPixmap(scaled)
+                self.logger.info("显示适应窗口的旋转图片: size=%s", f"{scaled.width()}x{scaled.height()}")
+            
+            # 强制更新显示
+            self.image_label.repaint()
+            
+        except Exception as e:
+            self.logger.error("显示旋转图片失败: %s", str(e))
+            # 如果显示失败，尝试基础显示
+            self._basic_display()
     
     def toggle_fullscreen(self):
         """Toggle fullscreen mode."""
@@ -1473,86 +1649,241 @@ class PhotoViewer(QWidget):
                 self.logger.info("使用缓存的图片: path=%s", file_path)
                 return self._image_cache[file_path]
             
-            from PIL import Image, ImageOps
-            import io
+            # 检查PIL依赖是否可用
+            try:
+                from PIL import Image, ImageOps
+                pil_available = True
+            except ImportError:
+                self.logger.warning("PIL库不可用，使用基础图片加载方式: %s", file_path)
+                pil_available = False
             
-            # 使用PIL加载图片
-            pil_image = Image.open(file_path)
+            if pil_available:
+                try:
+                    import io
+                    
+                    # 使用PIL加载图片
+                    pil_image = Image.open(file_path)
+                    
+                    # 获取EXIF方向信息
+                    exif = pil_image.getexif()
+                    orientation = exif.get(274)  # 274 是 Orientation 标签
+                    
+                    self.logger.info("加载图片EXIF信息: path=%s, orientation=%s, original_size=%s", 
+                                   file_path, orientation, f"{pil_image.width}x{pil_image.height}")
+                    
+                    # 根据EXIF方向信息旋转图片到标准方向
+                    if orientation and orientation != 1:  # 1是正常方向，不需要处理
+                        # EXIF方向值对应的旋转角度（PIL的rotate是逆时针）
+                        orientation_rotations = {
+                            1: 0,    # 正常
+                            2: 0,    # 水平翻转
+                            3: 180,  # 旋转180度
+                            4: 0,    # 垂直翻转
+                            5: 0,    # 水平翻转+旋转90度
+                            6: 270,  # 旋转90度（顺时针90度，PIL需要逆时针270度）
+                            7: 0,    # 水平翻转+旋转270度
+                            8: 90,   # 旋转270度（逆时针90度，PIL需要顺时针90度）
+                        }
+                        
+                        rotation_angle = orientation_rotations.get(orientation, 0)
+                        
+                        if rotation_angle != 0:
+                            # 旋转图片到标准方向
+                            pil_image = pil_image.rotate(rotation_angle, expand=True)
+                            self.logger.info("应用EXIF方向旋转到标准方向: original_orientation=%s, rotation_angle=%s, final_size=%s", 
+                                           orientation, rotation_angle, f"{pil_image.width}x{pil_image.height}")
+                        
+                        # 处理翻转
+                        if orientation in [2, 4, 5, 7]:
+                            if orientation in [2, 4]:  # 水平或垂直翻转
+                                pil_image = ImageOps.mirror(pil_image)
+                            elif orientation in [5, 7]:  # 需要先旋转再翻转
+                                pil_image = ImageOps.mirror(pil_image)
+                            self.logger.info("应用EXIF翻转: orientation=%s", orientation)
+                    
+                    # 优化：对于大图片，先压缩以提高性能
+                    max_size = 2048
+                    if pil_image.width > max_size or pil_image.height > max_size:
+                        # 计算缩放比例
+                        ratio = min(max_size / pil_image.width, max_size / pil_image.height)
+                        new_width = int(pil_image.width * ratio)
+                        new_height = int(pil_image.height * ratio)
+                        pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        self.logger.info("压缩大图片以提高性能: original_size=%s, compressed_size=%s", 
+                                       f"{pil_image.width}x{pil_image.height}", f"{new_width}x{new_height}")
+                    
+                    # 转换回QPixmap
+                    buffer = io.BytesIO()
+                    pil_image.save(buffer, format='PNG')
+                    buffer.seek(0)
+                    
+                    pixmap = QPixmap()
+                    if pixmap.loadFromData(buffer.getvalue()):
+                        # 缓存结果
+                        if not hasattr(self, '_image_cache'):
+                            self._image_cache = {}
+                        self._image_cache[file_path] = pixmap
+                        
+                        # 限制缓存大小，避免内存泄漏
+                        if len(self._image_cache) > 10:
+                            # 删除最旧的缓存项
+                            oldest_key = next(iter(self._image_cache))
+                            del self._image_cache[oldest_key]
+                        
+                        self.logger.info("图片加载完成，已处理EXIF方向: final_size=%s", 
+                                       f"{pixmap.width()}x{pixmap.height()}")
+                        
+                        return pixmap
+                    else:
+                        self.logger.warning("PIL转换QPixmap失败，回退到基础加载方式: %s", file_path)
+                        raise Exception("PIL转换QPixmap失败")
+                        
+                except Exception as pil_error:
+                    self.logger.warning("PIL处理失败，回退到基础加载方式: %s, error=%s", file_path, str(pil_error))
+                    # 如果PIL处理失败，回退到基础加载方式
+                    return self._load_image_basic(file_path)
+            else:
+                # PIL不可用，使用基础加载方式
+                return self._load_image_basic(file_path)
             
-            # 获取EXIF方向信息
-            exif = pil_image.getexif()
-            orientation = exif.get(274)  # 274 是 Orientation 标签
+        except Exception as e:
+            self.logger.error("图片加载完全失败，使用基础加载方式: path=%s, error=%s", 
+                            file_path, str(e))
+            # 如果所有方法都失败，使用基础加载方式
+            return self._load_image_basic(file_path)
+    
+    def _load_image_basic(self, file_path: str) -> QPixmap:
+        """基础图片加载方式，不依赖PIL"""
+        try:
+            pixmap = QPixmap(file_path)
+            if not pixmap.isNull():
+                self.logger.info("基础图片加载成功: path=%s, size=%s", 
+                               file_path, f"{pixmap.width()}x{pixmap.height()}")
+                return pixmap
+            else:
+                self.logger.error("基础图片加载失败，返回空QPixmap: %s", file_path)
+                return QPixmap()
+        except Exception as e:
+            self.logger.error("基础图片加载异常: path=%s, error=%s", file_path, str(e))
+            return QPixmap()
+    
+    def update_photo(self, photo_data):
+        """更新当前显示的照片"""
+        try:
+            if not photo_data:
+                self.clear_display()
+                return
             
-            self.logger.info("加载图片EXIF信息: path=%s, orientation=%s, original_size=%s", 
-                           file_path, orientation, f"{pil_image.width}x{pil_image.height}")
+            self.current_photo = photo_data
+            file_path = photo_data.get('filepath', '')
             
-            # 根据EXIF方向信息旋转图片到标准方向
-            if orientation and orientation != 1:  # 1是正常方向，不需要处理
-                # EXIF方向值对应的旋转角度（PIL的rotate是逆时针）
-                orientation_rotations = {
-                    1: 0,    # 正常
-                    2: 0,    # 水平翻转
-                    3: 180,  # 旋转180度
-                    4: 0,    # 垂直翻转
-                    5: 0,    # 水平翻转+旋转90度
-                    6: 270,  # 旋转90度（顺时针90度，PIL需要逆时针270度）
-                    7: 0,    # 水平翻转+旋转270度
-                    8: 90,   # 旋转270度（逆时针90度，PIL需要顺时针90度）
-                }
-                
-                rotation_angle = orientation_rotations.get(orientation, 0)
-                
-                if rotation_angle != 0:
-                    # 旋转图片到标准方向
-                    pil_image = pil_image.rotate(rotation_angle, expand=True)
-                    self.logger.info("应用EXIF方向旋转到标准方向: original_orientation=%s, rotation_angle=%s, final_size=%s", 
-                                   orientation, rotation_angle, f"{pil_image.width}x{pil_image.height}")
-                
-                # 处理翻转
-                if orientation in [2, 4, 5, 7]:
-                    if orientation in [2, 4]:  # 水平或垂直翻转
-                        pil_image = ImageOps.mirror(pil_image)
-                    elif orientation in [5, 7]:  # 需要先旋转再翻转
-                        pil_image = ImageOps.mirror(pil_image)
-                    self.logger.info("应用EXIF翻转: orientation=%s", orientation)
+            if not file_path:
+                self.logger.warning("照片数据中没有文件路径")
+                self.clear_display()
+                return
             
-            # 优化：对于大图片，先压缩以提高性能
-            max_size = 2048
-            if pil_image.width > max_size or pil_image.height > max_size:
-                # 计算缩放比例
-                ratio = min(max_size / pil_image.width, max_size / pil_image.height)
-                new_width = int(pil_image.width * ratio)
-                new_height = int(pil_image.height * ratio)
-                pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                self.logger.info("压缩大图片以提高性能: original_size=%s, compressed_size=%s", 
-                               f"{pil_image.width}x{pil_image.height}", f"{new_width}x{new_height}")
+            # 检查文件是否存在
+            if not Path(file_path).exists():
+                self.logger.error("照片文件不存在: %s", file_path)
+                self.clear_display()
+                return
             
-            # 转换回QPixmap
-            buffer = io.BytesIO()
-            pil_image.save(buffer, format='PNG')
-            buffer.seek(0)
+            # 加载并显示图片
+            pixmap = self.load_image_with_exif_orientation(file_path)
+            if pixmap.isNull():
+                self.logger.error("无法加载图片: %s", file_path)
+                self.clear_display()
+                return
             
-            pixmap = QPixmap()
-            pixmap.loadFromData(buffer.getvalue())
+            # 更新显示
+            self.current_pixmap = pixmap
+            self.original_pixmap = pixmap
+            self.display_image(pixmap)
             
-            # 缓存结果
-            if not hasattr(self, '_image_cache'):
-                self._image_cache = {}
-            self._image_cache[file_path] = pixmap
+            # 重置缩放和旋转
+            self.zoom_factor = 1.0
+            self.rotation_angle = 0
+            self.update_zoom_label()
+            self.update_rotation_label()
             
-            # 限制缓存大小，避免内存泄漏
-            if len(self._image_cache) > 10:
-                # 删除最旧的缓存项
-                oldest_key = next(iter(self._image_cache))
-                del self._image_cache[oldest_key]
+            self.logger.info("照片更新成功: photo_id=%s, filepath=%s", 
+                           photo_data.get('id'), file_path)
             
-            self.logger.info("图片加载完成，已处理EXIF方向: final_size=%s", 
-                           f"{pixmap.width()}x{pixmap.height()}")
+        except Exception as e:
+            self.logger.error("更新照片失败: %s", str(e))
+            self.clear_display()
+    
+    def clear_display(self):
+        """清空显示内容"""
+        try:
+            self.current_photo = None
+            self.current_pixmap = None
+            self.original_pixmap = None
+            self.image_label.clear()
+            self.image_label.setText("未选择照片")
+            self.zoom_factor = 1.0
+            self.rotation_angle = 0
+            self.update_zoom_label()
+            self.update_rotation_label()
+            self.logger.info("显示内容已清空")
+            
+        except Exception as e:
+            self.logger.error("清空显示内容失败: %s", str(e))
+    
+    def display_image(self, pixmap):
+        """显示图片"""
+        try:
+            if pixmap.isNull():
+                self.logger.warning("尝试显示空的图片")
+                return
+            
+            # 应用当前的缩放和旋转
+            scaled_pixmap = self.apply_transformations(pixmap)
+            
+            # 设置图片到标签
+            self.image_label.setPixmap(scaled_pixmap)
+            
+            # 调整标签大小以适应图片
+            self.image_label.adjustSize()
+            
+            self.logger.info("图片显示成功: size=%sx%s", 
+                           scaled_pixmap.width(), scaled_pixmap.height())
+            
+        except Exception as e:
+            self.logger.error("显示图片失败: %s", str(e))
+    
+    def apply_transformations(self, pixmap):
+        """应用缩放和旋转变换"""
+        try:
+            if pixmap.isNull():
+                return pixmap
+            
+            # 应用缩放
+            if self.zoom_factor != 1.0:
+                scaled_size = pixmap.size() * self.zoom_factor
+                pixmap = pixmap.scaled(scaled_size, Qt.AspectRatioMode.KeepAspectRatio, 
+                                     Qt.TransformationMode.SmoothTransformation)
+            
+            # 应用旋转
+            if self.rotation_angle != 0:
+                transform = QTransform()
+                transform.rotate(self.rotation_angle)
+                pixmap = pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
             
             return pixmap
             
         except Exception as e:
-            self.logger.error("处理EXIF方向失败，使用原始加载方式: path=%s, error=%s", 
-                            file_path, str(e))
-            # 如果处理失败，回退到原始加载方式
-            return QPixmap(file_path)
+            self.logger.error("应用图片变换失败: %s", str(e))
+            return pixmap
+
+    def _basic_display(self):
+        """基础显示方法，不依赖复杂的缩放逻辑"""
+        try:
+            if self.current_pixmap and not self.current_pixmap.isNull():
+                # 直接显示，不进行缩放
+                self.image_label.setPixmap(self.current_pixmap)
+                self.logger.info("使用基础显示方法")
+            else:
+                self.logger.warning("基础显示失败：没有有效的图片")
+        except Exception as e:
+            self.logger.error("基础显示方法失败: %s", str(e))
